@@ -1,4 +1,4 @@
-
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import { Card3D } from '../../../components/ui/Card3D';

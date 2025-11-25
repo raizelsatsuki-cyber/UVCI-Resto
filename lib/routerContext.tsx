@@ -1,51 +1,42 @@
+'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-// Contexte pour le routeur
-const RouterContext = createContext<any>(null);
+// --- TYPES ---
+interface Router {
+  push: (path: string) => void;
+  replace: (path: string) => void;
+  back: () => void;
+}
 
-// Hook pour accéder au routeur
-export const useRouter = () => {
-  const context = useContext(RouterContext);
-  if (!context) {
-    // Fallback de sécurité pour éviter le crash si utilisé hors provider
-    return { 
-        push: (path: string) => { window.location.hash = path; },
-        replace: (path: string) => { window.location.hash = path; }
-    };
-  }
-  return context;
-};
+// --- CONTEXT ---
+const RouterContext = createContext<Router | null>(null);
+const PathnameContext = createContext<string>('/');
 
-// Hook pour accéder au chemin actuel
-export const usePathname = () => {
-  const context = useContext(RouterContext);
-  if (!context) return window.location.hash.replace(/^#/, '') || '/';
-  return context.pathname;
-};
-
-// Le Provider composant
+// --- PROVIDER ---
 export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentPath, setCurrentPath] = useState('/');
+  const [pathname, setPathname] = useState('/');
 
   useEffect(() => {
-    // Fonction pour gérer les changements de hash
+    // Fonction pour synchroniser l'état avec le hash URL
     const handleHashChange = () => {
-      // Récupérer le hash, enlever le #, défaut à '/'
-      let path = window.location.hash.replace(/^#/, '');
-      if (!path) path = '/';
-      setCurrentPath(path);
+      // On retire le '#' du début. Si vide, on considère '/'
+      const hash = window.location.hash.slice(1) || '/';
+      setPathname(hash);
     };
-
-    // Initialisation
+    
+    // Initialisation : Si pas de hash, on met '#/' par défaut
+    if (!window.location.hash) {
+        window.location.hash = '#/';
+    }
     handleHashChange();
 
-    // Écouteur d'événement
+    // Écoute des changements
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const router = {
+  const router: Router = {
     push: (path: string) => {
       window.location.hash = path;
     },
@@ -58,8 +49,29 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   return (
-    <RouterContext.Provider value={{ ...router, pathname: currentPath }}>
-      {children}
+    <RouterContext.Provider value={router}>
+      <PathnameContext.Provider value={pathname}>
+        {children}
+      </PathnameContext.Provider>
     </RouterContext.Provider>
   );
+};
+
+// --- HOOKS ---
+export const useRouter = () => {
+  const context = useContext(RouterContext);
+  if (!context) {
+    // Fallback de sécurité si utilisé hors du Provider (ne devrait pas arriver avec la correction)
+    return {
+        push: (path: string) => window.location.hash = path,
+        replace: (path: string) => window.location.hash = path,
+        back: () => window.history.back(),
+    };
+  }
+  return context;
+};
+
+export const usePathname = () => {
+    // On retourne le pathname stocké dans le contexte (mis à jour via le hash)
+    return useContext(PathnameContext);
 };
