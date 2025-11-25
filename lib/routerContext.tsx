@@ -1,55 +1,56 @@
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
-// Interface imitant le routeur Next.js
-interface RouterContextType {
-  pathname: string;
-  push: (url: string) => void;
-  replace: (url: string) => void;
-  back: () => void;
-}
+// Contexte pour le routeur
+const RouterContext = createContext<any>(null);
 
-const RouterContext = createContext<RouterContextType | undefined>(undefined);
+// Hook pour accéder au routeur
+export const useRouter = () => {
+  const context = useContext(RouterContext);
+  if (!context) {
+    // Fallback de sécurité pour éviter le crash si utilisé hors provider
+    return { 
+        push: (path: string) => { window.location.hash = path; },
+        replace: (path: string) => { window.location.hash = path; }
+    };
+  }
+  return context;
+};
 
+// Hook pour accéder au chemin actuel
+export const usePathname = () => {
+  const context = useContext(RouterContext);
+  if (!context) return window.location.hash.replace(/^#/, '') || '/';
+  return context.pathname;
+};
+
+// Le Provider composant
 export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Fonction utilitaire pour extraire le chemin propre depuis le hash
-  // Ex: "#/menu" -> "/menu", "" -> "/"
-  const getHashPath = () => {
-    if (typeof window === 'undefined') return '/';
-    const hash = window.location.hash;
-    // On enlève le '#' initial
-    const path = hash.slice(1);
-    // Si vide, on considère que c'est la racine
-    return path || '/';
-  };
-
-  const [pathname, setPathname] = useState('/');
+  const [currentPath, setCurrentPath] = useState('/');
 
   useEffect(() => {
-    // Initialisation
-    setPathname(getHashPath());
-
+    // Fonction pour gérer les changements de hash
     const handleHashChange = () => {
-      setPathname(getHashPath());
+      // Récupérer le hash, enlever le #, défaut à '/'
+      let path = window.location.hash.replace(/^#/, '');
+      if (!path) path = '/';
+      setCurrentPath(path);
     };
 
-    // On écoute l'événement hashchange au lieu de popstate
+    // Initialisation
+    handleHashChange();
+
+    // Écouteur d'événement
     window.addEventListener('hashchange', handleHashChange);
-    
-    return () => {
-      window.removeEventListener('hashchange', handleHashChange);
-    };
+    return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
   const router = {
-    push: (url: string) => {
-      // On modifie le hash, ce qui est autorisé partout (même dans les iframes/blobs)
-      window.location.hash = url;
+    push: (path: string) => {
+      window.location.hash = path;
     },
-    replace: (url: string) => {
-      // Pour replace, on remplace l'URL courante avec le nouveau hash
-      const currentUrl = window.location.href.split('#')[0];
-      window.location.replace(currentUrl + '#' + url);
+    replace: (path: string) => {
+      window.location.hash = path;
     },
     back: () => {
       window.history.back();
@@ -57,25 +58,8 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   return (
-    <RouterContext.Provider value={{ pathname, ...router }}>
+    <RouterContext.Provider value={{ ...router, pathname: currentPath }}>
       {children}
     </RouterContext.Provider>
   );
-};
-
-// Hooks personnalisés imitant Next.js
-export const useRouter = () => {
-  const context = useContext(RouterContext);
-  if (!context) {
-    throw new Error('useRouter must be used within a RouterProvider');
-  }
-  return context;
-};
-
-export const usePathname = () => {
-  const context = useContext(RouterContext);
-  if (!context) {
-    throw new Error('usePathname must be used within a RouterProvider');
-  }
-  return context.pathname;
 };
