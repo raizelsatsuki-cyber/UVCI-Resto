@@ -1,0 +1,5 @@
+{
+  "name": "UVCI Resto App",
+  "description": "Application de restauration pour l'UVCI avec gestion de commandes, menus et solde de points.",
+  "requestFramePermissions": []
+}
