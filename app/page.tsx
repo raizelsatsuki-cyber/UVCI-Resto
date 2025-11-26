@@ -2,21 +2,11 @@
 
 import React from 'react';
 import { Button3D } from '../components/ui/Button3D';
-import { Utensils, Info, ArrowRight } from 'lucide-react';
+import { Utensils, Info } from 'lucide-react';
+import { useRouter } from '../lib/routerContext';
 
-interface HomePageProps {
-  onNavigate?: (view: string) => void;
-}
-
-export default function HomePage({ onNavigate }: HomePageProps) {
-  // Fonction de navigation sécurisée (fallback si utilisé hors du routing App.tsx)
-  const handleNavigate = (view: string) => {
-    if (onNavigate) {
-      onNavigate(view);
-    } else {
-      window.location.href = `/${view}`;
-    }
-  };
+export default function HomePage() {
+  const router = useRouter();
 
   return (
     <div className="container mx-auto px-4 flex flex-col items-center justify-center min-h-[75vh] text-center space-y-10 animate-in fade-in zoom-in duration-500 pb-12">
@@ -49,7 +39,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md mx-auto">
         <Button3D
           variant="primary"
-          onClick={() => handleNavigate('menu')}
+          onClick={() => router.push('/menu')}
           className="text-lg py-4 flex-1 shadow-uvci-purple/20 shadow-xl"
         >
           <div className="flex items-center justify-center gap-2">
@@ -60,7 +50,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
 
         <Button3D
           variant="ghost"
-          onClick={() => handleNavigate('about')}
+          onClick={() => router.push('/about')}
           className="text-lg py-4 flex-1"
         >
           <div className="flex items-center justify-center gap-2">

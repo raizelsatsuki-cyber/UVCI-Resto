@@ -3,75 +3,62 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 // --- TYPES ---
-interface Router {
+interface RouterContextType {
   push: (path: string) => void;
-  replace: (path: string) => void;
-  back: () => void;
+  pathname: string;
 }
 
-// --- CONTEXT ---
-const RouterContext = createContext<Router | null>(null);
-const PathnameContext = createContext<string>('/');
+const RouterContext = createContext<RouterContextType | undefined>(undefined);
+
+// --- HOOKS ---
+export const useRouter = () => {
+  const context = useContext(RouterContext);
+  if (!context) {
+     // Fallback de sécurité si utilisé hors du Provider (ne devrait pas arriver)
+     return { push: (path: string) => window.location.hash = path };
+  }
+  return { push: context.push };
+};
+
+export const usePathname = () => {
+  const context = useContext(RouterContext);
+  return context ? context.pathname : '/';
+};
 
 // --- PROVIDER ---
 export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [pathname, setPathname] = useState('/');
 
   useEffect(() => {
-    // Fonction pour synchroniser l'état avec le hash URL
+    // 1. Initialiser le chemin basé sur le hash actuel ou par défaut '/'
     const handleHashChange = () => {
-      // On retire le '#' du début. Si vide, on considère '/'
-      const hash = window.location.hash.slice(1) || '/';
+      let hash = window.location.hash.slice(1); // Enlever le '#'
+      if (!hash) {
+          hash = '/';
+          // Ne pas forcer le hash si on est à la racine pour éviter une boucle, 
+          // sauf si on veut explicitement initialiser l'app.
+      }
       setPathname(hash);
     };
-    
-    // Initialisation : Si pas de hash, on met '#/' par défaut
+
+    // Gestion initiale
     if (!window.location.hash) {
-        window.location.hash = '#/';
+        window.location.hash = '/';
     }
     handleHashChange();
 
-    // Écoute des changements
+    // Ecouteur
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const router: Router = {
-    push: (path: string) => {
-      window.location.hash = path;
-    },
-    replace: (path: string) => {
-      window.location.hash = path;
-    },
-    back: () => {
-      window.history.back();
-    }
+  const push = (path: string) => {
+    window.location.hash = path;
   };
 
   return (
-    <RouterContext.Provider value={router}>
-      <PathnameContext.Provider value={pathname}>
-        {children}
-      </PathnameContext.Provider>
+    <RouterContext.Provider value={{ push, pathname }}>
+      {children}
     </RouterContext.Provider>
   );
-};
-
-// --- HOOKS ---
-export const useRouter = () => {
-  const context = useContext(RouterContext);
-  if (!context) {
-    // Fallback de sécurité si utilisé hors du Provider (ne devrait pas arriver avec la correction)
-    return {
-        push: (path: string) => window.location.hash = path,
-        replace: (path: string) => window.location.hash = path,
-        back: () => window.history.back(),
-    };
-  }
-  return context;
-};
-
-export const usePathname = () => {
-    // On retourne le pathname stocké dans le contexte (mis à jour via le hash)
-    return useContext(PathnameContext);
 };
