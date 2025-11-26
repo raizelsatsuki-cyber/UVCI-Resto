@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import MenuPage from './app/menu/page';
@@ -50,17 +48,24 @@ const AppContent: React.FC = () => {
             
             if (session?.user) {
                 // Fetch profile async without blocking the UI heavily
-                supabase
-                    .from('profiles')
-                    .select('role')
-                    .eq('id', session.user.id)
-                    .single()
-                    .then(({ data: profile }) => {
+                const fetchProfile = async () => {
+                    try {
+                        const { data: profile, error } = await supabase
+                            .from('profiles')
+                            .select('role')
+                            .eq('id', session.user.id)
+                            .single();
+                        
+                        if (error) throw error;
+
                         if (isMounted && profile && profile.role) {
                             setUserRole(profile.role === 'admin' ? 'admin' : 'student');
                         }
-                    })
-                    .catch(err => console.warn("Profile fetch error", err));
+                    } catch (err) {
+                        console.warn("Profile fetch error", err);
+                    }
+                };
+                fetchProfile();
             }
         }
       } catch (e) {

@@ -11,45 +11,45 @@ interface RouterContextType {
 const RouterContext = createContext<RouterContextType | undefined>(undefined);
 
 // --- HOOKS ---
+
 export const useRouter = () => {
   const context = useContext(RouterContext);
   if (!context) {
-     // Fallback de sécurité si utilisé hors du Provider (ne devrait pas arriver)
-     return { push: (path: string) => window.location.hash = path };
+    // Fallback de sécurité : permet une navigation basique même hors contexte
+    return { push: (path: string) => { window.location.hash = path; } };
   }
   return { push: context.push };
 };
 
 export const usePathname = () => {
   const context = useContext(RouterContext);
-  return context ? context.pathname : '/';
+  // Retourne '/' par défaut si le contexte n'est pas encore monté
+  return context?.pathname || '/';
 };
 
 // --- PROVIDER ---
+// Implémentation d'un routeur basé sur le Hash (#) pour compatibilité universelle
+// (Fonctionne à la fois en SPA via index.tsx et en déploiement statique)
 export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [pathname, setPathname] = useState('/');
+  const [currentPath, setCurrentPath] = useState('/');
 
   useEffect(() => {
-    // 1. Initialiser le chemin basé sur le hash actuel ou par défaut '/'
-    const handleHashChange = () => {
-      let hash = window.location.hash.slice(1); // Enlever le '#'
-      if (!hash) {
-          hash = '/';
-          // Ne pas forcer le hash si on est à la racine pour éviter une boucle, 
-          // sauf si on veut explicitement initialiser l'app.
-      }
-      setPathname(hash);
+    // Fonction pour lire le hash actuel (sans le #)
+    const getHashPath = () => {
+      const hash = window.location.hash.replace(/^#/, '');
+      return hash || '/';
     };
 
-    // Gestion initiale
-    if (!window.location.hash) {
-        window.location.hash = '/';
-    }
-    handleHashChange();
+    const onHashChange = () => {
+      setCurrentPath(getHashPath());
+    };
 
-    // Ecouteur
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    // Initialisation
+    setCurrentPath(getHashPath());
+
+    // Écoute des changements
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   const push = (path: string) => {
@@ -57,7 +57,7 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   return (
-    <RouterContext.Provider value={{ push, pathname }}>
+    <RouterContext.Provider value={{ push, pathname: currentPath }}>
       {children}
     </RouterContext.Provider>
   );
