@@ -1,874 +1,489 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card3D } from '../../../components/ui/Card3D';
 import { Button3D } from '../../../components/ui/Button3D';
-import { Order, OrderStatus, MenuItem, MealOption, OrderItem } from '../../../types/index';
+import { Order, OrderStatus, MenuItem, MealOption } from '../../../types/index';
+import { useAuth } from '../../../context/AuthContext';
+import { useRouter } from '../../../lib/routerContext';
+import { signOut } from '../../../lib/services/authService';
+import { getAllOrders, updateOrderStatus, subscribeToAllOrders } from '../../../lib/services/orderService';
+import { getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem } from '../../../lib/services/menuService';
 import { supabase } from '../../../lib/supabaseClient';
-import { 
-  TrendingUp, 
-  Clock, 
-  AlertTriangle, 
-  CheckCircle, 
-  Package, 
-  ChefHat, 
-  Search,
-  Loader2,
-  RefreshCw,
-  Hash,
-  Utensils,
-  Plus,
-  Edit2,
-  Trash2,
-  Image as ImageIcon,
-  Save,
-  X,
-  ToggleLeft,
-  ToggleRight,
-  ListPlus,
-  CheckSquare,
-  Square,
-  ShieldAlert,
-  LogOut,
-  ChevronDown,
-  ChevronUp,
-  BellRing
+import { toast } from 'react-toastify';
+import {
+  TrendingUp, Clock, CheckCircle, Package, ChefHat, Loader2, RefreshCw,
+  Hash, Utensils, Plus, Edit2, Trash2, ImageIcon, Save, X, ToggleLeft, ToggleRight,
+  ListPlus, CheckSquare, Square, LogOut, ChevronDown, ChevronUp, BellRing, ShieldAlert
 } from 'lucide-react';
-import LoginPage from '../../auth/login/page'; 
 
-// FORCE DYNAMIC RENDERING - Next.js 13/14
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-// Catégories uniformisées
 const CATEGORIES = ['Petit-déjeuner', 'Entrée', 'Plat', 'Dessert', 'Boisson'];
 
-// --- DONNÉES DE DÉMONSTRATION (FALLBACK) ---
-const MOCK_ORDERS: Order[] = [
-    {
-        id: 'cmd-demo-1',
-        client_phone: '0707070707',
-        status: 'pending',
-        total_price: 3500,
-        payment_method: 'wave',
-        created_at: new Date().toISOString()
-    }
-];
+const STATUS_COLORS: Record<string, string> = {
+  pending: 'bg-orange-100 text-orange-700 border-orange-200',
+  ready:   'bg-blue-100 text-blue-700 border-blue-200',
+  delivered: 'bg-gray-100 text-gray-500 border-gray-200',
+};
 
-const MOCK_MENU_ITEMS: MenuItem[] = [
-  {
-    id: 'demo-1',
-    name: 'Tiep Boulet (Démo)',
-    description: 'Mode Démo activé car connexion DB échouée.',
-    price: 1500,
-    category: 'Plat',
-    image_url: 'https://images.unsplash.com/photo-1604329760661-e71dc831ddee?auto=format&fit=crop&q=80&w=800',
-    stock_quantity: 20,
-    is_available: true,
-    allergens: ['Poisson'],
-    meal_options: []
-  }
-];
+function emptyItem() {
+  return {
+    name: '', description: '', price: 0, image_url: '', category: 'Plat',
+    allergens: [] as string[], stock_quantity: 50, is_available: true,
+    meal_options: [] as Partial<MealOption>[],
+  };
+}
 
 export default function AdminDashboard() {
-  // --- STATES SECURITY ---
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { user, profile, loading: authLoading } = useAuth();
+  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders');
-  
-  // --- STATES COMMANDES ---
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(true);
-  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
-  const [globalOptionsMap, setGlobalOptionsMap] = useState<Record<string, string>>({});
-
-  // --- STATES MENU ---
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingMenu, setLoadingMenu] = useState(false);
-  const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
-  
-  const [editingItem, setEditingItem] = useState<Partial<MenuItem> & { meal_options: Partial<MealOption>[] }>({
-    meal_options: []
-  });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [optionsMap, setOptionsMap] = useState<Record<string, string>>({});
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ReturnType<typeof emptyItem>>(emptyItem());
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // ------------------------------------------------------------------
-  // SECURITY CHECK
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    const checkAdminAccess = async () => {
-      setCheckingAuth(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          setIsAuthorized(false);
-          setCheckingAuth(false);
-          return;
-        }
-
-        setUserEmail(session.user.email || null);
-
-        // Vérification du rôle
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
-
-        if (error || !profile || profile.role !== 'admin') {
-          console.warn("Accès refusé: Rôle insuffisant ou erreur DB.", error);
-          if (session.user.email?.includes('admin') || session.user.email === 'resto@uvci.edu.ci') {
-             setIsAuthorized(true);
-             fetchOrders(); 
-             preloadOptions(); // Charger les noms des options pour l'affichage
-          } else {
-             setIsAuthorized(false);
-          }
-        } else {
-          setIsAuthorized(true);
-          fetchOrders();
-          preloadOptions();
-        }
-      } catch (err) {
-        console.error("Erreur auth:", err);
-        setIsAuthorized(false);
-      } finally {
-        setCheckingAuth(false);
-      }
-    };
-
-    checkAdminAccess();
+  // Chargement commandes
+  const fetchOrders = useCallback(async () => {
+    try {
+      const data = await getAllOrders();
+      setOrders(data);
+    } catch (err: any) {
+      toast.error('Erreur chargement commandes : ' + err.message);
+    } finally {
+      setLoadingOrders(false);
+    }
   }, []);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    // La redirection est gérée globalement par App.tsx (événement SIGNED_OUT -> /auth/login)
-  };
-
-  // Charge toutes les options pour faire le mapping ID -> Nom
-  const preloadOptions = async () => {
-    const { data } = await supabase.from('meal_options').select('id, name');
-    if (data) {
-        const mapping: Record<string, string> = {};
-        data.forEach((opt: any) => {
-            mapping[opt.id] = opt.name;
-        });
-        setGlobalOptionsMap(mapping);
-    }
-  };
-
-  // ------------------------------------------------------------------
-  // LOGIQUE COMMANDES
-  // ------------------------------------------------------------------
-  const fetchOrders = async () => {
-    setLoadingOrders(true);
-    try {
-        // Récupération profonde : Commandes -> Items -> Plats
-        const { data, error } = await supabase
-        .from('orders')
-        .select(`
-            *,
-            order_items (
-                id,
-                quantity,
-                price_at_order,
-                selected_option,
-                menu_items (
-                    name
-                )
-            )
-        `)
-        .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        if (data) setOrders(data as Order[]);
-    } catch (err) {
-        console.error("Erreur fetch orders (Fallback Démo):", err);
-        setOrders(MOCK_ORDERS);
-    } finally {
-        setLoadingOrders(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isAuthorized) {
-        fetchOrders(); 
-        
-        const channel = supabase
-        .channel('public:orders')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-            fetchOrders();
-        })
-        .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }
-  }, [isAuthorized]);
-
-  const handleStatusChange = async (orderId: string, nextStatus: OrderStatus) => {
-    // Si c'est une commande démo
-    if (orderId.startsWith('cmd-demo')) {
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
-        return;
-    }
-
-    // Optimistic UI update
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
-    await supabase.from('orders').update({ status: nextStatus }).eq('id', orderId);
-  };
-
-  const toggleOrderDetails = (orderId: string) => {
-    setExpandedOrderId(expandedOrderId === orderId ? null : orderId);
-  };
-
-  // Helper pour afficher les options
-  const renderOptionNames = (optionIds: string[] | null | undefined) => {
-    if (!optionIds || !Array.isArray(optionIds) || optionIds.length === 0) return null;
-    return (
-        <div className="flex flex-wrap gap-1 mt-1">
-            {optionIds.map(id => (
-                <span key={id} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">
-                    + {globalOptionsMap[id] || 'Option inconnue'}
-                </span>
-            ))}
-        </div>
-    );
-  };
-
-  // ------------------------------------------------------------------
-  // LOGIQUE MENU
-  // ------------------------------------------------------------------
-  const fetchMenu = async () => {
+  // Chargement menu
+  const fetchMenu = useCallback(async () => {
     setLoadingMenu(true);
     try {
-        const { data: items, error: itemsError } = await supabase
-            .from('menu_items')
-            .select('*')
-            .order('name');
-        
-        if (itemsError) throw itemsError;
-
-        let options: any[] = [];
-        try {
-            const { data: optionsData } = await supabase.from('meal_options').select('*');
-            if (optionsData) options = optionsData;
-        } catch (optErr) {
-            console.warn("Warning: Could not fetch options", optErr);
-        }
-            
-        const menuWithOptions = (items || []).map(item => ({
-            ...item,
-            meal_options: options.filter((o: any) => o.meal_id === item.id)
-        }));
-
-        setMenuItems(menuWithOptions as MenuItem[]);
-    } catch (error: any) {
-        console.error('Error fetching menu (Fallback Démo):', error);
-        setMenuItems(MOCK_MENU_ITEMS);
+      const data = await getMenuItems();
+      setMenuItems(data);
+    } catch (err: any) {
+      toast.error('Erreur chargement menu : ' + err.message);
     } finally {
-        setLoadingMenu(false);
+      setLoadingMenu(false);
     }
-  };
+  }, []);
+
+  // Préchargement des noms d'options pour affichage dans les commandes
+  const preloadOptions = useCallback(async () => {
+    const { data } = await supabase.from('meal_options').select('id, name');
+    if (data) {
+      const map: Record<string, string> = {};
+      data.forEach((o) => { map[o.id] = o.name; });
+      setOptionsMap(map);
+    }
+  }, []);
 
   useEffect(() => {
-    if (activeTab === 'menu' && isAuthorized) fetchMenu();
-  }, [activeTab, isAuthorized]);
+    if (authLoading) return;
+    if (!user || profile?.role !== 'admin') return;
 
-  const handleOpenMenuModal = (item?: MenuItem) => {
+    fetchOrders();
+    preloadOptions();
+
+    // Realtime commandes
+    const channel = subscribeToAllOrders(fetchOrders);
+    return () => { channel.unsubscribe(); };
+  }, [user, profile, authLoading, fetchOrders, preloadOptions]);
+
+  useEffect(() => {
+    if (activeTab === 'menu' && menuItems.length === 0) fetchMenu();
+  }, [activeTab, fetchMenu, menuItems.length]);
+
+  // Garde admin
+  if (authLoading) {
+    return <div className="flex justify-center items-center min-h-[60vh]"><Loader2 className="animate-spin text-uvci-purple" size={40} /></div>;
+  }
+  if (!user || profile?.role !== 'admin') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+        <ShieldAlert size={48} className="text-red-400 mb-4" />
+        <h2 className="text-xl font-bold text-gray-700 mb-2">Accès réservé aux administrateurs</h2>
+        <button onClick={() => router.push('/')} className="mt-4 px-6 py-2 bg-uvci-purple text-white font-bold rounded-xl">Retour</button>
+      </div>
+    );
+  }
+
+  // Stats
+  const today = new Date().toDateString();
+  const todayOrders = orders.filter((o) => new Date(o.created_at).toDateString() === today);
+  const pendingCount = orders.filter((o) => o.status === 'pending').length;
+  const dailyRevenue = todayOrders.reduce((s, o) => s + o.total_price, 0);
+
+  // Changement statut
+  const handleStatusChange = async (id: string, status: 'ready' | 'delivered') => {
+    try {
+      await updateOrderStatus(id, status);
+      toast.success(`Commande marquée : ${status === 'ready' ? 'Prête' : 'Livrée'}`);
+      fetchOrders();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // Modal menu
+  const openModal = (item?: MenuItem) => {
     if (item) {
-      setEditingItem({
-        ...item,
-        meal_options: item.meal_options || []
-      });
+      setEditingId(item.id);
+      setEditingItem({ ...item, meal_options: item.meal_options ?? [] });
     } else {
-      setEditingItem({
-        name: '', 
-        description: '', 
-        price: 0, 
-        category: CATEGORIES[2], 
-        image_url: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c', 
-        stock_quantity: 10, 
-        is_available: true, 
-        allergens: [],
-        meal_options: []
-      });
+      setEditingId(null);
+      setEditingItem(emptyItem());
     }
-    setIsMenuModalOpen(true);
+    setIsModalOpen(true);
   };
 
-  const handleAddOption = () => {
-    setEditingItem(prev => ({
-      ...prev,
-      meal_options: [
-        ...(prev.meal_options || []),
-        { id: `temp-${Date.now()}`, meal_id: prev.id || '', name: '', price_modifier: 0, is_mandatory: false }
-      ]
-    }));
-  };
-
-  const handleRemoveOption = (index: number) => {
-    setEditingItem(prev => ({
-      ...prev,
-      meal_options: prev.meal_options.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleUpdateOption = (index: number, field: keyof MealOption, value: any) => {
-    setEditingItem(prev => {
-      const newOptions = [...prev.meal_options];
-      newOptions[index] = { ...newOptions[index], [field]: value };
-      return { ...prev, meal_options: newOptions };
-    });
-  };
-
-  const handleSaveMenuItem = async () => {
-    if (!editingItem.name || !editingItem.price) return alert("Nom et Prix requis");
-
-    if (editingItem.id && editingItem.id.startsWith('demo')) {
-        alert("Modification non sauvegardée en base de données (Mode Démo).");
-        setIsMenuModalOpen(false);
-        return;
+  const handleSave = async () => {
+    if (!editingItem.name || !editingItem.price) {
+      toast.warning('Nom et prix sont obligatoires.');
+      return;
     }
-
-    const { meal_options, id: itemId, ...itemData } = editingItem;
-    const payload = {
-        ...itemData,
-        allergens: Array.isArray(editingItem.allergens) ? editingItem.allergens : []
-    };
-
     try {
-      let savedItemId = itemId;
-
-      if (itemId && !itemId.toString().startsWith('temp')) {
-        const { error } = await supabase.from('menu_items').update(payload).eq('id', itemId);
-        if (error) throw error;
+      const options = editingItem.meal_options.map((o) => ({
+        name: o.name ?? '',
+        price_modifier: o.price_modifier ?? 0,
+        is_mandatory: o.is_mandatory ?? false,
+      }));
+      const payload = {
+        name: editingItem.name,
+        description: editingItem.description,
+        price: editingItem.price,
+        image_url: editingItem.image_url,
+        category: editingItem.category,
+        allergens: editingItem.allergens,
+        stock_quantity: editingItem.stock_quantity,
+        is_available: editingItem.is_available,
+      };
+      if (editingId) {
+        await updateMenuItem(editingId, payload, options);
+        toast.success('Plat mis à jour !');
       } else {
-        const { data, error } = await supabase.from('menu_items').insert([payload]).select().single();
-        if (error) throw error;
-        savedItemId = data.id;
+        await createMenuItem(payload, options);
+        toast.success('Plat ajouté !');
       }
-
-      if (savedItemId) {
-        await supabase.from('meal_options').delete().eq('meal_id', savedItemId);
-        
-        if (meal_options && meal_options.length > 0) {
-          const optionsToInsert = meal_options
-            .filter(opt => opt.name && opt.name.trim() !== '') 
-            .map(opt => ({
-              meal_id: savedItemId,
-              name: opt.name,
-              price_modifier: opt.price_modifier || 0,
-              is_mandatory: opt.is_mandatory || false
-            }));
-
-          if (optionsToInsert.length > 0) {
-            const { error: optionsError } = await supabase.from('meal_options').insert(optionsToInsert);
-            if (optionsError) throw optionsError;
-          }
-        }
-      }
-
-      setIsMenuModalOpen(false);
-      await fetchMenu(); 
+      setIsModalOpen(false);
+      fetchMenu();
     } catch (err: any) {
-      console.error("Erreur sauvegarde :", err);
-      alert(`Erreur sauvegarde: ${err.message}`);
+      toast.error(err.message);
     }
   };
 
-  const handleDeleteMenuItem = async (id: string) => {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer ce plat ?")) return;
-
-    if (id.startsWith('demo')) {
-        setMenuItems(prev => prev.filter(item => item.id !== id));
-        return;
-    }
-
-    setMenuItems(prev => prev.filter(item => item.id !== id));
-
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Supprimer ce plat ? Cette action est irréversible.')) return;
     try {
-        await supabase.from('meal_options').delete().eq('meal_id', id);
-        const { error } = await supabase.from('menu_items').delete().eq('id', id);
-        if (error) throw error;
-        await fetchMenu();
+      await deleteMenuItem(id);
+      toast.success('Plat supprimé.');
+      fetchMenu();
     } catch (err: any) {
-        console.error("Erreur suppression:", err);
-        await fetchMenu();
-        alert("Impossible de supprimer ce plat.");
+      toast.error(err.message);
     }
   };
-  
-  if (checkingAuth) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-uvci-purple">
-        <Loader2 size={48} className="animate-spin mb-4" />
-        <p className="font-bold">Vérification des droits d'accès...</p>
-      </div>
-    );
-  }
 
-  if (!isAuthorized) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-        <Card3D className="max-w-md w-full p-8 text-center border-t-4 border-red-500">
-          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <ShieldAlert size={40} className="text-red-500" />
-          </div>
-          <h2 className="text-2xl font-black text-gray-800 mb-2">Accès Restreint</h2>
-          <p className="text-gray-500 mb-8">
-            Cette zone est réservée aux administrateurs.
-            {userEmail ? ` Le compte ${userEmail} ne possède pas les privilèges requis.` : " Veuillez vous connecter."}
-          </p>
-          {userEmail ? (
-             <Button3D variant="ghost" fullWidth onClick={handleLogout}>
-                <LogOut size={18} className="mr-2"/> Se déconnecter
-             </Button3D>
-          ) : (
-            <LoginPage />
-          )}
-        </Card3D>
-      </div>
-    );
-  }
-  
-  const pendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'Awaiting Payment').length;
-  
-  // Correction du calcul: Revenu JOURNALIER (Daily)
-  const isToday = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    return date.getDate() === today.getDate() &&
-           date.getMonth() === today.getMonth() &&
-           date.getFullYear() === today.getFullYear();
-  };
+  const handleAddOption = () =>
+    setEditingItem((p) => ({ ...p, meal_options: [...p.meal_options, { name: '', price_modifier: 0, is_mandatory: false }] }));
 
-  const dailyRevenue = orders
-    .filter(o => isToday(o.created_at))
-    .reduce((acc, curr) => acc + curr.total_price, 0);
+  const handleUpdateOption = (idx: number, field: string, value: any) =>
+    setEditingItem((p) => {
+      const opts = [...p.meal_options];
+      opts[idx] = { ...opts[idx], [field]: value };
+      return { ...p, meal_options: opts };
+    });
 
-  const getStatusColor = (status: OrderStatus) => {
-    switch (status) {
-      case 'pending': 
-      case 'Awaiting Payment':
-        return 'bg-orange-100 text-orange-700 border-orange-200';
-      case 'ready': 
-      case 'Ready': 
-        return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'Delivered': 
-      case 'delivered': 
-        return 'bg-green-100 text-green-700 border-green-200';
-      default: return 'bg-gray-100 text-gray-700';
-    }
+  const handleRemoveOption = (idx: number) =>
+    setEditingItem((p) => ({ ...p, meal_options: p.meal_options.filter((_, i) => i !== idx) }));
+
+  const renderOptionNames = (ids: string[] | null | undefined) => {
+    if (!ids || ids.length === 0) return null;
+    const names = ids.map((id) => optionsMap[id] ?? id).join(', ');
+    return <p className="text-xs text-gray-400 mt-1">Options : {names}</p>;
   };
 
   return (
-    <div className="min-h-screen bg-uvci-purple/5 p-4 sm:p-10 font-sans pb-20">
-      <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="container mx-auto px-4 pt-6 pb-20 max-w-6xl">
+      {/* Header */}
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-800 flex items-center gap-3">
-            <ChefHat className="text-uvci-purple" size={32} />
-            Dashboard Admin
+            <ChefHat className="text-uvci-purple" size={32} /> Administration
           </h1>
-          <p className="text-gray-500 font-medium mt-1">
-             Connecté en tant que <span className="text-uvci-purple font-bold">{userEmail}</span>
-          </p>
+          <p className="text-gray-400 text-sm mt-1">Connecté : {user.email}</p>
         </div>
-        
-        <div className="flex gap-4">
-            <div className="bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm flex gap-2">
-                <button
-                    onClick={() => setActiveTab('orders')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'orders' ? 'bg-uvci-purple text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                    <Package size={18} />
-                    Commandes
-                </button>
-                <button
-                    onClick={() => setActiveTab('menu')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'menu' ? 'bg-uvci-green text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                    <Utensils size={18} />
-                    Menu
-                </button>
-            </div>
-            
-            <button 
-                onClick={handleLogout}
-                className="bg-white p-3 rounded-xl border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                title="Se déconnecter"
-            >
-                <LogOut size={20} />
-            </button>
+        <div className="flex gap-3">
+          <div className="bg-white p-1.5 rounded-xl border border-gray-200 flex gap-1">
+            {(['orders', 'menu'] as const).map((t) => (
+              <button key={t} onClick={() => setActiveTab(t)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === t ? (t === 'orders' ? 'bg-uvci-purple text-white' : 'bg-uvci-green text-white') : 'text-gray-500 hover:bg-gray-50'}`}>
+                {t === 'orders' ? <Package size={16} /> : <Utensils size={16} />}
+                {t === 'orders' ? 'Commandes' : 'Menu'}
+              </button>
+            ))}
+          </div>
+          <button onClick={async () => { await signOut(); router.push('/auth/login'); }}
+            className="p-3 bg-white rounded-xl border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 transition">
+            <LogOut size={18} />
+          </button>
         </div>
       </header>
 
-      {/* Stats Grid */}
+      {/* Stats */}
       {activeTab === 'orders' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <Card3D className="p-6 border-l-4 border-l-orange-400">
-            <div className="flex items-center justify-between mb-4">
-                <div className="bg-orange-100 p-3 rounded-xl"><Clock className="text-orange-600" size={24} /></div>
-                <span className="text-xs font-black uppercase text-gray-400 tracking-wider">En cours</span>
+          <Card3D className="p-6 border-l-4 border-l-orange-400">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-orange-100 p-3 rounded-xl"><Clock className="text-orange-600" size={22} /></div>
+              <span className="text-xs font-bold uppercase text-gray-400">En attente</span>
             </div>
-            <p className="text-4xl font-black text-gray-800">{pendingOrders}</p>
-            </Card3D>
-            
-            <Card3D className="p-6 border-l-4 border-l-uvci-green">
-            <div className="flex items-center justify-between mb-4">
-                <div className="bg-green-100 p-3 rounded-xl"><TrendingUp className="text-uvci-green" size={24} /></div>
-                <span className="text-xs font-black uppercase text-gray-400 tracking-wider">Revenu (24h)</span>
+            <p className="text-4xl font-black text-gray-800">{pendingCount}</p>
+          </Card3D>
+          <Card3D className="p-6 border-l-4 border-l-uvci-green">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-green-100 p-3 rounded-xl"><TrendingUp className="text-uvci-green" size={22} /></div>
+              <span className="text-xs font-bold uppercase text-gray-400">Revenu (24h)</span>
             </div>
-            <p className="text-4xl font-black text-gray-800">{dailyRevenue.toLocaleString()} <span className="text-lg text-gray-400">FCFA</span></p>
-            </Card3D>
-            
-            <Card3D className="p-6 border-l-4 border-l-red-500">
-             <div className="flex items-center justify-between mb-4">
-                <div className="bg-red-100 p-3 rounded-xl"><AlertTriangle className="text-red-600" size={24} /></div>
-                <span className="text-xs font-black uppercase text-gray-400 tracking-wider">Stock</span>
+            <p className="text-4xl font-black text-gray-800">{dailyRevenue.toLocaleString()} <span className="text-base text-gray-400">F</span></p>
+          </Card3D>
+          <Card3D className="p-6 border-l-4 border-l-uvci-purple">
+            <div className="flex items-center justify-between mb-3">
+              <div className="bg-purple-100 p-3 rounded-xl"><Package className="text-uvci-purple" size={22} /></div>
+              <span className="text-xs font-bold uppercase text-gray-400">Commandes aujourd'hui</span>
             </div>
-            <p className="text-4xl font-black text-gray-800">Gestion</p>
-            </Card3D>
+            <p className="text-4xl font-black text-gray-800">{todayOrders.length}</p>
+          </Card3D>
         </div>
       )}
 
-      {/* -------------------- VUE COMMANDES -------------------- */}
+      {/* Table commandes */}
       {activeTab === 'orders' && (
-        <Card3D className="p-0 overflow-hidden flex flex-col min-h-[500px]">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-white">
-                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <Package size={20} className="text-uvci-purple" />
-                    Flux de Commandes
-                </h2>
-                <Button3D variant="ghost" onClick={fetchOrders} className="p-2"><RefreshCw size={18}/></Button3D>
-            </div>
+        <Card3D className="overflow-hidden">
+          <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Package size={18} className="text-uvci-purple" /> Flux de commandes</h2>
+            <Button3D variant="ghost" onClick={fetchOrders} className="p-2"><RefreshCw size={16} /></Button3D>
+          </div>
+          {loadingOrders ? (
+            <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-uvci-purple" size={32} /></div>
+          ) : orders.length === 0 ? (
+            <div className="p-10 text-center text-gray-400">Aucune commande pour le moment.</div>
+          ) : (
             <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-50/50 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
-                        <tr>
-                            <th className="p-5 w-10"></th>
-                            <th className="p-5">ID</th>
-                            <th className="p-5">Heure</th>
-                            <th className="p-5">Client</th>
-                            <th className="p-5">Total</th>
-                            <th className="p-5">Statut</th>
-                            <th className="p-5 text-right">Action</th>
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 text-xs font-bold text-gray-400 uppercase border-b border-gray-100">
+                  <tr>
+                    <th className="p-4 w-8"></th>
+                    <th className="p-4">ID</th>
+                    <th className="p-4">Heure</th>
+                    <th className="p-4">Client</th>
+                    <th className="p-4">Total</th>
+                    <th className="p-4">Statut</th>
+                    <th className="p-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {orders.map((order) => (
+                    <React.Fragment key={order.id}>
+                      <tr className="hover:bg-gray-50/80 transition-colors text-sm">
+                        <td className="p-4">
+                          <button onClick={() => setExpandedId(expandedId === order.id ? null : order.id)} className="text-gray-400 hover:text-uvci-purple">
+                            {expandedId === order.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </button>
+                        </td>
+                        <td className="p-4 font-mono text-xs text-gray-400"><Hash size={10} className="inline mr-0.5" />{order.id.slice(0, 6)}</td>
+                        <td className="p-4 text-gray-500">{new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td className="p-4 font-bold text-gray-800">{order.client_phone}</td>
+                        <td className="p-4 font-bold">{order.total_price.toLocaleString()} F</td>
+                        <td className="p-4">
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[order.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                            {order.status === 'pending' ? 'En attente' : order.status === 'ready' ? 'Prête' : 'Livrée'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right space-x-2">
+                          {order.status === 'pending' && (
+                            <Button3D variant="primary" onClick={() => handleStatusChange(order.id, 'ready')} className="py-1 px-3 text-xs bg-blue-500 border-blue-700">
+                              <BellRing size={12} className="mr-1 inline" /> Prêt
+                            </Button3D>
+                          )}
+                          {order.status === 'ready' && (
+                            <Button3D variant="secondary" onClick={() => handleStatusChange(order.id, 'delivered')} className="py-1 px-3 text-xs">
+                              <CheckCircle size={12} className="mr-1 inline" /> Livré
+                            </Button3D>
+                          )}
+                        </td>
+                      </tr>
+                      {expandedId === order.id && (
+                        <tr className="bg-gray-50/50">
+                          <td colSpan={7} className="px-6 py-4 pl-14 border-b border-gray-100">
+                            <p className="text-xs font-bold uppercase text-gray-400 mb-2">Détail de la commande</p>
+                            <div className="space-y-2">
+                              {order.order_items?.map((item, i) => (
+                                <div key={item.id ?? i} className="bg-white p-3 rounded-lg border border-gray-200 text-sm">
+                                  <span className="font-bold">{item.quantity}× {item.menu_items?.name ?? 'Plat'}</span>
+                                  {renderOptionNames(item.selected_option)}
+                                  <span className="float-right font-bold text-gray-500">{(item.price_at_order * item.quantity).toLocaleString()} F</span>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-3">Paiement : <strong>{order.payment_method.toUpperCase()}</strong></p>
+                          </td>
                         </tr>
-                    </thead>
-                    <tbody className="text-sm divide-y divide-gray-100 bg-white">
-                        {orders.map((order) => (
-                            <React.Fragment key={order.id}>
-                                <tr className={`hover:bg-gray-50/80 transition-colors ${expandedOrderId === order.id ? 'bg-gray-50' : ''}`}>
-                                    <td className="p-5 text-center">
-                                        <button 
-                                            onClick={() => toggleOrderDetails(order.id)}
-                                            className="text-gray-400 hover:text-uvci-purple transition-colors"
-                                        >
-                                            {expandedOrderId === order.id ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
-                                        </button>
-                                    </td>
-                                    <td className="p-5 font-mono text-xs text-gray-400">
-                                        <div className="flex items-center">
-                                            <Hash size={12} className="inline mr-1"/>
-                                            {order.id.slice(0, 6)}
-                                        </div>
-                                    </td>
-                                    <td className="p-5 text-gray-500">{new Date(order.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</td>
-                                    <td className="p-5 font-bold text-gray-800">{order.client_phone}</td>
-                                    <td className="p-5 font-bold">{order.total_price} F</td>
-                                    <td className="p-5">
-                                        <span className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${getStatusColor(order.status)}`}>
-                                            {order.status === 'pending' || order.status === 'Awaiting Payment' ? 'En attente' : 
-                                             order.status === 'ready' ? 'Prête' : 'Livrée'}
-                                        </span>
-                                    </td>
-                                    <td className="p-5 text-right">
-                                        {(order.status === 'pending' || order.status === 'Awaiting Payment') && (
-                                            <Button3D 
-                                                variant="primary" 
-                                                onClick={() => handleStatusChange(order.id, 'ready')} 
-                                                className="py-1 px-3 text-xs bg-blue-500 border-blue-700"
-                                            >
-                                                <BellRing size={14} className="mr-1 inline"/> Prêt
-                                            </Button3D>
-                                        )}
-                                        {order.status === 'ready' && (
-                                            <Button3D 
-                                                variant="secondary" 
-                                                onClick={() => handleStatusChange(order.id, 'delivered')} 
-                                                className="py-1 px-3 text-xs"
-                                            >
-                                                <CheckCircle size={14} className="mr-1 inline"/> Livré
-                                            </Button3D>
-                                        )}
-                                    </td>
-                                </tr>
-                                {expandedOrderId === order.id && (
-                                    <tr className="bg-gray-50/50">
-                                        <td colSpan={7} className="p-0">
-                                            <div className="p-6 pl-16 border-b border-gray-100 animate-in slide-in-from-top-2">
-                                                <h4 className="text-xs font-bold uppercase text-gray-500 mb-3 tracking-wider">Détails de la commande</h4>
-                                                {order.order_items && order.order_items.length > 0 ? (
-                                                    <div className="grid gap-3">
-                                                        {order.order_items.map((item, idx) => (
-                                                            <div key={item.id || idx} className="flex justify-between items-start bg-white p-3 rounded-lg border border-gray-200">
-                                                                <div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="font-bold text-gray-800 text-sm">
-                                                                            {item.quantity}x {item.menu_items?.name || 'Plat inconnu'}
-                                                                        </span>
-                                                                    </div>
-                                                                    {renderOptionNames(item.selected_option)}
-                                                                </div>
-                                                                <div className="text-sm font-bold text-gray-600">
-                                                                    {item.price_at_order * item.quantity} F
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-sm text-gray-400 italic">Aucun détail disponible.</p>
-                                                )}
-                                                <div className="mt-4 flex justify-between items-center text-sm">
-                                                     <span className="text-gray-500">Moyen de paiement: <span className="font-bold text-gray-800 uppercase">{order.payment_method}</span></span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </React.Fragment>
-                        ))}
-                    </tbody>
-                </table>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          )}
         </Card3D>
       )}
 
-      {/* -------------------- VUE MENU -------------------- */}
+      {/* Table menu */}
       {activeTab === 'menu' && (
-        <Card3D className="p-0 overflow-hidden flex flex-col min-h-[500px]">
-            {/* ... Le reste du code du menu reste identique ... */}
-            <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white">
-                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <Utensils size={20} className="text-uvci-green" />
-                    Carte du Restaurant
-                </h2>
-                <Button3D onClick={() => handleOpenMenuModal()} variant="secondary" className="flex items-center gap-2">
-                    <Plus size={18} /> Nouveau Plat
-                </Button3D>
-            </div>
-            
+        <Card3D className="overflow-hidden">
+          <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Utensils size={18} className="text-uvci-green" /> Carte du restaurant</h2>
+            <Button3D variant="secondary" onClick={() => openModal()} className="flex items-center gap-2 text-sm">
+              <Plus size={16} /> Nouveau plat
+            </Button3D>
+          </div>
+          {loadingMenu ? (
+            <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-uvci-green" size={32} /></div>
+          ) : (
             <div className="overflow-x-auto">
-                {loadingMenu ? (
-                    <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-uvci-green"/></div>
-                ) : (
-                    <table className="w-full text-left border-collapse">
-                        <thead className="bg-gray-50/50 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
-                            <tr>
-                                <th className="p-5">Plat</th>
-                                <th className="p-5">Catégorie</th>
-                                <th className="p-5">Prix</th>
-                                <th className="p-5">Stock</th>
-                                <th className="p-5">Dispo</th>
-                                <th className="p-5">Options</th>
-                                <th className="p-5 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-sm divide-y divide-gray-100 bg-white">
-                            {menuItems.map((item) => (
-                                <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
-                                    <td className="p-5">
-                                        <div className="flex items-center gap-3">
-                                            <img src={item.image_url} alt="" className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
-                                            <div>
-                                                <div className="font-bold text-gray-800">{item.name}</div>
-                                                <div className="text-xs text-gray-400 truncate max-w-[150px]">{item.description}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="p-5"><span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium text-gray-600">{item.category}</span></td>
-                                    <td className="p-5 font-bold text-uvci-purple">{item.price} F</td>
-                                    <td className="p-5 font-mono font-medium">{item.stock_quantity}</td>
-                                    <td className="p-5">
-                                        {item.is_available ? (
-                                            <span className="flex items-center gap-1 text-green-600 font-bold text-xs"><CheckCircle size={14}/> Oui</span>
-                                        ) : (
-                                            <span className="flex items-center gap-1 text-red-500 font-bold text-xs"><X size={14}/> Non</span>
-                                        )}
-                                    </td>
-                                    <td className="p-5">
-                                        <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                            {item.meal_options?.length || 0}
-                                        </span>
-                                    </td>
-                                    <td className="p-5 text-right space-x-2">
-                                        <button onClick={() => handleOpenMenuModal(item)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={18}/></button>
-                                        <button onClick={() => handleDeleteMenuItem(item.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18}/></button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-xs font-bold text-gray-400 uppercase border-b border-gray-100">
+                  <tr>
+                    <th className="p-4">Plat</th><th className="p-4">Catégorie</th><th className="p-4">Prix</th>
+                    <th className="p-4">Stock</th><th className="p-4">Dispo</th><th className="p-4">Options</th><th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {menuItems.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <img src={item.image_url ?? ''} alt="" className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
+                          <div>
+                            <p className="font-bold text-gray-800">{item.name}</p>
+                            <p className="text-xs text-gray-400 truncate max-w-[140px]">{item.description}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4"><span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium">{item.category}</span></td>
+                      <td className="p-4 font-bold text-uvci-purple">{item.price.toLocaleString()} F</td>
+                      <td className="p-4 font-mono">{item.stock_quantity}</td>
+                      <td className="p-4">
+                        {item.is_available
+                          ? <span className="text-green-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={12} /> Oui</span>
+                          : <span className="text-red-500 font-bold text-xs flex items-center gap-1"><X size={12} /> Non</span>}
+                      </td>
+                      <td className="p-4"><span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">{item.meal_options?.length ?? 0}</span></td>
+                      <td className="p-4 text-right space-x-1">
+                        <button onClick={() => openModal(item)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition"><Edit2 size={16} /></button>
+                        <button onClick={() => handleDelete(item.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 size={16} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          )}
         </Card3D>
       )}
 
-      {/* ... MODAL EDITION MENU (Unchanged structure, reused imports) ... */}
-      {isMenuModalOpen && (
+      {/* Modal edition plat */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-6 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="text-xl font-bold text-gray-800">{editingItem.id ? 'Modifier le plat' : 'Ajouter un plat'}</h3>
-                    <button onClick={() => setIsMenuModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={24}/></button>
-                </div>
-                
-                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-                    {/* ... (Existing modal content) ... */}
-                    <div className="flex justify-center">
-                         <div className="relative w-full h-32 bg-gray-100 rounded-xl overflow-hidden border-2 border-dashed border-gray-300 flex items-center justify-center group">
-                            {editingItem.image_url ? (
-                                <img src={editingItem.image_url} alt="Preview" className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="text-center text-gray-400"><ImageIcon className="mx-auto mb-1"/><span className="text-xs">Aperçu Image</span></div>
-                            )}
-                         </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1 col-span-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Nom du plat</label>
-                            <input 
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-uvci-purple/20 outline-none font-medium" 
-                                value={editingItem.name} 
-                                onChange={e => setEditingItem({...editingItem, name: e.target.value})} 
-                            />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Prix (FCFA)</label>
-                            <input 
-                                type="number"
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-uvci-purple/20 outline-none font-medium" 
-                                value={editingItem.price} 
-                                onChange={e => setEditingItem({...editingItem, price: parseInt(e.target.value)})} 
-                            />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Catégorie</label>
-                            <select 
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-uvci-purple/20 outline-none font-medium bg-white" 
-                                value={editingItem.category} 
-                                onChange={e => setEditingItem({...editingItem, category: e.target.value})} 
-                            >
-                                {CATEGORIES.map((cat) => (
-                                    <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="space-y-1 col-span-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Description</label>
-                            <textarea 
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-uvci-purple/20 outline-none text-sm" 
-                                rows={2}
-                                value={editingItem.description} 
-                                onChange={e => setEditingItem({...editingItem, description: e.target.value})} 
-                            />
-                        </div>
-                        <div className="space-y-1 col-span-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase">URL Image</label>
-                            <input 
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-uvci-purple/20 outline-none text-sm text-gray-600" 
-                                value={editingItem.image_url} 
-                                onChange={e => setEditingItem({...editingItem, image_url: e.target.value})} 
-                            />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Stock</label>
-                            <input 
-                                type="number"
-                                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-uvci-purple/20 outline-none font-medium" 
-                                value={editingItem.stock_quantity} 
-                                onChange={e => setEditingItem({...editingItem, stock_quantity: parseInt(e.target.value)})} 
-                            />
-                        </div>
-                        <div className="space-y-1 flex items-end pb-2">
-                            <button 
-                                onClick={() => setEditingItem({...editingItem, is_available: !editingItem.is_available})}
-                                className={`w-full p-2 rounded-lg border font-bold text-sm flex items-center justify-center gap-2 transition-all ${editingItem.is_available ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}
-                            >
-                                {editingItem.is_available ? <ToggleRight size={20}/> : <ToggleLeft size={20}/>}
-                                {editingItem.is_available ? 'Disponible' : 'Indisponible'}
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="border-t border-gray-100 pt-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                <ListPlus size={18} className="text-uvci-purple"/>
-                                Accompagnements / Options
-                            </label>
-                            <button 
-                                onClick={handleAddOption}
-                                className="text-xs font-bold text-white bg-uvci-purple px-3 py-1.5 rounded-lg hover:bg-uvci-purple/90 transition flex items-center gap-1"
-                            >
-                                <Plus size={14} /> Ajouter Option
-                            </button>
-                        </div>
-
-                        {(!editingItem.meal_options || editingItem.meal_options.length === 0) ? (
-                            <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200 text-gray-400 text-sm">
-                                Aucune option définie pour ce plat.
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {editingItem.meal_options.map((opt, idx) => (
-                                    <div key={idx} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-right-2">
-                                        <div className="flex-grow flex gap-2 w-full sm:w-auto">
-                                            <input 
-                                                placeholder="Nom (ex: Alloco)"
-                                                className="flex-grow p-2 text-sm border rounded-md focus:border-uvci-purple outline-none"
-                                                value={opt.name || ''}
-                                                onChange={(e) => handleUpdateOption(idx, 'name', e.target.value)}
-                                            />
-                                            <input 
-                                                type="number"
-                                                placeholder="+Prix"
-                                                className="w-20 p-2 text-sm border rounded-md focus:border-uvci-purple outline-none"
-                                                value={opt.price_modifier}
-                                                onChange={(e) => handleUpdateOption(idx, 'price_modifier', parseInt(e.target.value))}
-                                            />
-                                        </div>
-                                        
-                                        <div className="flex items-center justify-between w-full sm:w-auto gap-3 pl-1">
-                                            <button 
-                                                onClick={() => handleUpdateOption(idx, 'is_mandatory', !opt.is_mandatory)}
-                                                className={`flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded border transition-colors ${opt.is_mandatory ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-white text-gray-500 border-gray-200'}`}
-                                            >
-                                                {opt.is_mandatory ? <CheckSquare size={14}/> : <Square size={14}/>}
-                                                Obligatoire
-                                            </button>
-                                            <button 
-                                                onClick={() => handleRemoveOption(idx)}
-                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="p-6 border-t border-gray-100 bg-gray-50 flex gap-3">
-                    <Button3D variant="ghost" fullWidth onClick={() => setIsMenuModalOpen(false)}>Annuler</Button3D>
-                    <Button3D variant="primary" fullWidth onClick={handleSaveMenuItem}>
-                        <Save size={18} className="mr-2" /> Enregistrer
-                    </Button3D>
-                </div>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-gray-800">{editingId ? 'Modifier le plat' : 'Ajouter un plat'}</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={22} /></button>
             </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Aperçu image */}
+              <div className="w-full h-28 bg-gray-100 rounded-xl overflow-hidden border-2 border-dashed border-gray-300 flex items-center justify-center">
+                {editingItem.image_url ? <img src={editingItem.image_url} alt="" className="w-full h-full object-cover" /> : <div className="text-center text-gray-400 text-xs"><ImageIcon className="mx-auto mb-1" size={20} />Aperçu</div>}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase">Nom du plat *</label>
+                  <input className="w-full mt-1 p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple text-sm font-medium"
+                    value={editingItem.name} onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Prix (FCFA) *</label>
+                  <input type="number" min={0} className="w-full mt-1 p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-uvci-purple/20 text-sm font-medium"
+                    value={editingItem.price} onChange={(e) => setEditingItem({ ...editingItem, price: parseInt(e.target.value) || 0 })} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Catégorie</label>
+                  <select className="w-full mt-1 p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-uvci-purple/20 text-sm bg-white"
+                    value={editingItem.category} onChange={(e) => setEditingItem({ ...editingItem, category: e.target.value })}>
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase">Description</label>
+                  <textarea rows={2} className="w-full mt-1 p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-uvci-purple/20 text-sm"
+                    value={editingItem.description ?? ''} onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })} />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase">URL Image</label>
+                  <input className="w-full mt-1 p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-uvci-purple/20 text-sm text-gray-500"
+                    value={editingItem.image_url ?? ''} onChange={(e) => setEditingItem({ ...editingItem, image_url: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Stock</label>
+                  <input type="number" min={0} className="w-full mt-1 p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-uvci-purple/20 text-sm"
+                    value={editingItem.stock_quantity} onChange={(e) => setEditingItem({ ...editingItem, stock_quantity: parseInt(e.target.value) || 0 })} />
+                </div>
+                <div className="flex items-end">
+                  <button onClick={() => setEditingItem({ ...editingItem, is_available: !editingItem.is_available })}
+                    className={`w-full p-2.5 rounded-lg border text-sm font-bold flex items-center justify-center gap-2 transition ${editingItem.is_available ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                    {editingItem.is_available ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                    {editingItem.is_available ? 'Disponible' : 'Indisponible'}
+                  </button>
+                </div>
+              </div>
+              {/* Options */}
+              <div className="border-t border-gray-100 pt-4">
+                <div className="flex justify-between items-center mb-3">
+                  <label className="text-sm font-bold text-gray-700 flex items-center gap-2"><ListPlus size={16} className="text-uvci-purple" /> Options / Accompagnements</label>
+                  <button onClick={handleAddOption} className="text-xs font-bold text-white bg-uvci-purple px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-uvci-purple/90">
+                    <Plus size={13} /> Ajouter
+                  </button>
+                </div>
+                {editingItem.meal_options.length === 0
+                  ? <p className="text-center py-4 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">Aucune option</p>
+                  : <div className="space-y-2">
+                      {editingItem.meal_options.map((opt, idx) => (
+                        <div key={idx} className="flex gap-2 items-center bg-gray-50 p-2 rounded-lg border border-gray-200">
+                          <input placeholder="Nom" className="flex-1 p-2 text-sm border rounded-md outline-none focus:border-uvci-purple"
+                            value={opt.name ?? ''} onChange={(e) => handleUpdateOption(idx, 'name', e.target.value)} />
+                          <input type="number" placeholder="+Prix" className="w-20 p-2 text-sm border rounded-md outline-none focus:border-uvci-purple"
+                            value={opt.price_modifier ?? 0} onChange={(e) => handleUpdateOption(idx, 'price_modifier', parseInt(e.target.value) || 0)} />
+                          <button onClick={() => handleUpdateOption(idx, 'is_mandatory', !opt.is_mandatory)}
+                            className={`text-xs font-bold px-2 py-1.5 rounded border flex items-center gap-1 transition ${opt.is_mandatory ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-white text-gray-400 border-gray-200'}`}>
+                            {opt.is_mandatory ? <CheckSquare size={13} /> : <Square size={13} />} Obligatoire
+                          </button>
+                          <button onClick={() => handleRemoveOption(idx)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition"><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                    </div>
+                }
+              </div>
+            </div>
+            <div className="p-5 border-t border-gray-100 bg-gray-50 flex gap-3">
+              <Button3D variant="ghost" fullWidth onClick={() => setIsModalOpen(false)}>Annuler</Button3D>
+              <Button3D variant="primary" fullWidth onClick={handleSave}><Save size={16} className="mr-2" /> Enregistrer</Button3D>
+            </div>
+          </div>
         </div>
       )}
     </div>

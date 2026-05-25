@@ -1,5 +1,3 @@
-
-
 export type UserRole = 'student' | 'staff' | 'admin';
 
 export interface User {
@@ -9,14 +7,6 @@ export interface User {
   balance_points: number;
 }
 
-// Interface pour le profil utilisateur en base de données (Supabase Auth + public.profiles)
-export interface UserProfile {
-  id: string;
-  email: string;
-  role: 'client' | 'admin';
-}
-
-// Nouvelle interface pour les options en base de données
 export interface MealOption {
   id: string;
   meal_id: string;
@@ -28,26 +18,25 @@ export interface MealOption {
 export interface MenuItem {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   price: number;
-  image_url: string;
+  image_url: string | null;
   category: string;
-  allergens: string[];
+  allergens: string[] | null;
   stock_quantity: number;
   is_available: boolean;
-  meal_options?: MealOption[]; // Added relational field
+  meal_options?: MealOption[];
 }
 
-// Structure pour stocker les options choisies dans le panier/commande
 export interface SelectedOption {
-  id?: string; // Ajout de l'ID pour le mapping FK en base de données
+  id?: string;
   name: string;
   type: 'mandatory' | 'optional' | 'manual';
   price_modifier: number;
 }
 
-// Mise à jour des statuts pour correspondre aux contraintes DB (Case sensitive: 'pending', 'ready')
-export type OrderStatus = 'pending' | 'ready' | 'delivered' | 'Awaiting Payment' | 'Ready' | 'Delivered';
+/** Statuts DB (snake_case uniquement — les variantes capitalisées sont abandonnées) */
+export type OrderStatus = 'pending' | 'ready' | 'delivered';
 
 export interface OrderItem {
   id: string;
@@ -56,21 +45,17 @@ export interface OrderItem {
   quantity: number;
   price_at_order: number;
   selected_option?: string[] | null;
-  // Propriété virtuelle pour l'affichage après jointure
-  menu_items?: {
-    name: string;
-  };
+  menu_items?: { name: string };
 }
 
 export interface Order {
   id: string;
-  user_id?: string;
-  client_phone: string;
+  user_id?: string | null;
+  client_phone: string | null;
   status: OrderStatus;
   total_price: number;
   payment_method: 'wave' | 'cash';
   created_at: string;
-  // Propriété virtuelle pour l'affichage après jointure
   order_items?: OrderItem[];
 }
 
@@ -78,5 +63,5 @@ export interface CartItem {
   id: string;
   menu_item: MenuItem;
   quantity: number;
-  selectedOptions: SelectedOption[]; // Nouveau champ
+  selectedOptions: SelectedOption[];
 }

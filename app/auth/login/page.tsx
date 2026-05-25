@@ -1,110 +1,56 @@
 'use client';
 
 import React, { useState } from 'react';
-import { supabase } from '../../../lib/supabaseClient';
-import { Mail, Lock, Loader2, ArrowRight, UserPlus, LogIn } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, UserPlus, KeyRound } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { Button3D } from '../../../components/ui/Button3D';
 import { Card3D } from '../../../components/ui/Card3D';
-import { toast } from 'react-toastify';
-// CHANGEMENT ICI
+import { signIn, signUp, resetPassword } from '../../../lib/services/authService';
 import { useRouter } from '../../../lib/routerContext';
 
-function translateSupabaseError(message: string): string {
-  if (!message) return "Une erreur est survenue.";
-  const lower = message.toLowerCase();
-  if (lower.includes('invalid login credentials')) return "Email ou mot de passe incorrect.";
-  if (lower.includes('email not confirmed')) return "Veuillez confirmer votre email avant de vous connecter.";
-  if (lower.includes('user already registered')) return "Un compte avec cet email existe déjà.";
-  if (lower.includes('password should be at least')) return "Le mot de passe doit contenir au moins 6 caractères.";
-  if (lower.includes('signup is disabled')) return "Les inscriptions sont temporairement désactivées.";
-  if (lower.includes('email rate limit exceeded')) return "Trop de tentatives. Veuillez réessayer plus tard.";
-  if (lower.includes('network') || lower.includes('fetch')) return "Erreur de connexion réseau. Vérifiez votre connexion internet.";
-  return message;
-}
+type Tab = 'login' | 'register' | 'reset';
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [tab, setTab] = useState<Tab>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-
-    // --- VALIDATION DU DOMAINE INSTITUTIONNEL ---
     const cleanEmail = email.trim().toLowerCase();
-    
+
     if (!cleanEmail.endsWith('@uvci.edu.ci')) {
-      toast.error("Accès restreint. Utilisez votre email @uvci.edu.ci");
-      setLoading(false);
+      toast.error('Accès restreint aux adresses @uvci.edu.ci');
       return;
     }
 
+    setLoading(true);
     try {
-      if (isLogin) {
-        // --- CONNEXION ---
-        const { error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
-        if (error) throw error;
-        
-        toast.success("Connexion réussie !");
-        setLoading(false);
-        
-        // Redirection explicite avec le router
+      if (tab === 'login') {
+        await signIn(cleanEmail, password);
+        toast.success('Connexion réussie !');
         router.push('/menu');
-        
-      } else {
-        // --- INSCRIPTION ---
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-        });
-        if (signUpError) throw signUpError;
 
-        if (data.user) {
-          // LOGIQUE ADMIN PROTOTYPE :
-          const assignedRole = cleanEmail === 'resto@uvci.edu.ci' ? 'admin' : 'client';
-
-          // FIX FK: Insertion dans public.users pour satisfaire la clé étrangère des commandes
-          const { error: userError } = await supabase
-            .from('users')
-            .upsert({ id: data.user.id, email: cleanEmail });
-
-          if (userError) console.warn("Erreur insertion users:", userError);
-
-          // Création du profil utilisateur dans public.profiles (Rôles)
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .insert([
-              { 
-                id: data.user.id, 
-                email: cleanEmail, 
-                role: assignedRole 
-              }
-            ]);
-
-          if (profileError) {
-             console.error("Erreur création profil:", profileError);
-             if (profileError.code === '23505') { // Code unique violation
-                await supabase.from('profiles').update({ role: assignedRole }).eq('id', data.user.id);
-             }
-          }
-
-          toast.success(`Compte créé ! Vous êtes ${assignedRole === 'admin' ? 'Admin' : 'Client'}. Connectez-vous.`);
-          setIsLogin(true); // Basculer vers le login
-        } else {
-          toast.info("Vérifiez votre boîte mail pour confirmer votre inscription.");
+      } else if (tab === 'register') {
+        const { user, session } = await signUp(cleanEmail, password);
+        if (session) {
+          toast.success('Compte créé ! Bienvenue.');
+          router.push('/menu');
+        } else if (user) {
+          toast.info('Compte créé. Vérifiez votre email pour confirmer votre inscription.');
+          setTab('login');
         }
-        setLoading(false);
+
+      } else {
+        await resetPassword(cleanEmail);
+        toast.success('Email de réinitialisation envoyé. Vérifiez votre boîte mail.');
+        setTab('login');
       }
     } catch (err: any) {
-      console.error(err);
-      const msg = translateSupabaseError(err.message);
-      toast.error(msg || "Une erreur est survenue.");
+      toast.error(err.message ?? 'Une erreur est survenue.');
+    } finally {
       setLoading(false);
     }
   };
@@ -112,43 +58,43 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-uvci-purple/10 via-white to-uvci-green/10">
       <div className="w-full max-w-md">
+        {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-gradient-to-br from-uvci-purple to-uvci-green rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-lg border-b-4 border-black/10 mx-auto mb-4">
             U
           </div>
           <h1 className="text-3xl font-extrabold text-gray-800">UVCI Resto</h1>
-          <p className="text-gray-500 font-medium">Authentification Étudiant & Admin</p>
+          <p className="text-gray-500 font-medium">Espace étudiant & administrateur</p>
         </div>
 
         <Card3D className="p-8 border-t-4 border-t-uvci-purple">
-          <div className="flex justify-center mb-6 border-b border-gray-100 pb-2">
-            <button
-              onClick={() => setIsLogin(true)}
-              className={`pb-2 px-4 font-bold text-sm transition-colors relative ${isLogin ? 'text-uvci-purple' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              Connexion
-              {isLogin && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-uvci-purple rounded-full"></span>}
-            </button>
-            <button
-              onClick={() => setIsLogin(false)}
-              className={`pb-2 px-4 font-bold text-sm transition-colors relative ${!isLogin ? 'text-uvci-green' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              Inscription
-              {!isLogin && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-uvci-green rounded-full"></span>}
-            </button>
+          {/* Onglets */}
+          <div className="flex justify-center mb-6 border-b border-gray-100 pb-2 gap-2">
+            {(['login', 'register', 'reset'] as Tab[]).map((t) => {
+              const labels: Record<Tab, string> = { login: 'Connexion', register: 'Inscription', reset: 'Mot de passe' };
+              return (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`pb-2 px-3 font-bold text-xs transition-colors relative ${tab === t ? 'text-uvci-purple' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  {labels[t]}
+                  {tab === t && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-uvci-purple rounded-full" />}
+                </button>
+              );
+            })}
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Email */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-500 uppercase ml-1">Email UVCI</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-gray-400" />
-                </div>
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="email"
                   required
-                  placeholder="nom.prenom@uvci.edu.ci"
+                  placeholder="prenom.nom@uvci.edu.ci"
                   className="block w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none transition-all font-medium text-black"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -157,45 +103,46 @@ export default function LoginPage() {
               <p className="text-[10px] text-gray-400 ml-1">Uniquement les adresses @uvci.edu.ci sont acceptées.</p>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-500 uppercase ml-1">Mot de passe</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-gray-400" />
+            {/* Mot de passe (masqué sur reset) */}
+            {tab !== 'reset' && (
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-500 uppercase ml-1">Mot de passe</label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    minLength={6}
+                    className="block w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none transition-all font-medium text-black"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
                 </div>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  className="block w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none transition-all font-medium text-black"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
               </div>
-            </div>
+            )}
 
             <Button3D
               type="submit"
               disabled={loading}
               fullWidth
-              variant={isLogin ? 'primary' : 'secondary'}
+              variant={tab === 'register' ? 'secondary' : 'primary'}
               className="py-4"
             >
               {loading ? (
-                <>
-                  <Loader2 className="animate-spin" />
-                  <span>Traitement...</span>
-                </>
-              ) : isLogin ? (
+                <><Loader2 className="animate-spin" /><span>Traitement…</span></>
+              ) : tab === 'login' ? (
                 <span className="flex items-center gap-2">Se connecter <ArrowRight size={18} /></span>
+              ) : tab === 'register' ? (
+                <span className="flex items-center gap-2">Créer mon compte <UserPlus size={18} /></span>
               ) : (
-                <span className="flex items-center gap-2">Créer un compte <UserPlus size={18} /></span>
+                <span className="flex items-center gap-2">Envoyer le lien <KeyRound size={18} /></span>
               )}
             </Button3D>
           </form>
 
           <p className="mt-6 text-center text-xs text-gray-400">
-            En continuant, vous acceptez les conditions d'utilisation de l'UVCI Resto App.
+            En continuant, vous acceptez les conditions d'utilisation de l'UVCI Resto.
           </p>
         </Card3D>
       </div>
