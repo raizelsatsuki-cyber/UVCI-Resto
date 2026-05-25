@@ -1,6 +1,9 @@
 import React from 'react';
 import { Providers } from './providers';
-import type { Metadata } from 'next';
+interface Metadata {
+  title: string;
+  description: string;
+}
 
 export const metadata: Metadata = {
   title: 'UVCI RESTO',
