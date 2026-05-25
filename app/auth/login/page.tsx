@@ -9,6 +9,19 @@ import { toast } from 'react-toastify';
 // CHANGEMENT ICI
 import { useRouter } from '../../../lib/routerContext';
 
+function translateSupabaseError(message: string): string {
+  if (!message) return "Une erreur est survenue.";
+  const lower = message.toLowerCase();
+  if (lower.includes('invalid login credentials')) return "Email ou mot de passe incorrect.";
+  if (lower.includes('email not confirmed')) return "Veuillez confirmer votre email avant de vous connecter.";
+  if (lower.includes('user already registered')) return "Un compte avec cet email existe déjà.";
+  if (lower.includes('password should be at least')) return "Le mot de passe doit contenir au moins 6 caractères.";
+  if (lower.includes('signup is disabled')) return "Les inscriptions sont temporairement désactivées.";
+  if (lower.includes('email rate limit exceeded')) return "Trop de tentatives. Veuillez réessayer plus tard.";
+  if (lower.includes('network') || lower.includes('fetch')) return "Erreur de connexion réseau. Vérifiez votre connexion internet.";
+  return message;
+}
+
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -39,6 +52,7 @@ export default function LoginPage() {
         if (error) throw error;
         
         toast.success("Connexion réussie !");
+        setLoading(false);
         
         // Redirection explicite avec le router
         router.push('/menu');
@@ -82,12 +96,15 @@ export default function LoginPage() {
 
           toast.success(`Compte créé ! Vous êtes ${assignedRole === 'admin' ? 'Admin' : 'Client'}. Connectez-vous.`);
           setIsLogin(true); // Basculer vers le login
-          setLoading(false); 
+        } else {
+          toast.info("Vérifiez votre boîte mail pour confirmer votre inscription.");
         }
+        setLoading(false);
       }
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || "Une erreur est survenue.");
+      const msg = translateSupabaseError(err.message);
+      toast.error(msg || "Une erreur est survenue.");
       setLoading(false);
     }
   };

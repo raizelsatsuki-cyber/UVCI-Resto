@@ -16,30 +16,28 @@ const ProvidersContent: React.FC<{ children: React.ReactNode }> = ({ children })
   const router = useRouter();
   const pathname = usePathname();
 
+  // Extraire push pour une référence stable dans useEffect
+  const { push } = router;
+
   useEffect(() => {
     let isMounted = true;
 
     const checkSession = async () => {
       try {
-        // 1. Création d'un Timeout de sécurité de 3 secondes
-        // Si Supabase ne répond pas, on débloque l'interface.
         const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ timeout: true }), 3000));
         const sessionPromise = supabase.auth.getSession();
 
-        // Course entre la session et le timeout
         const result: any = await Promise.race([sessionPromise, timeoutPromise]);
 
         if (!isMounted) return;
 
         if (result.timeout) {
             console.warn("Supabase Auth check timed out - defaulting to guest/public view");
-            // On laisse sessionUser à null, ce qui affichera la page Login ou Public
         } else {
             const { data: { session } } = result;
             setSessionUser(session?.user || null);
             
             if (session?.user) {
-                // Fetch profile async de manière sécurisée (Try/Catch)
                 const fetchProfile = async () => {
                     try {
                         const { data: profile, error } = await supabase
@@ -74,7 +72,6 @@ const ProvidersContent: React.FC<{ children: React.ReactNode }> = ({ children })
       setSessionUser(session?.user || null);
       
       if (session?.user) {
-         // Re-check profile on auth change
          try {
             const { data: profile } = await supabase
                 .from('profiles')
@@ -88,7 +85,7 @@ const ProvidersContent: React.FC<{ children: React.ReactNode }> = ({ children })
              console.warn("Auth change profile fetch error", err);
          }
       } else if (event === 'SIGNED_OUT') {
-         router.push('/auth/login');
+         push('/auth/login');
       }
       
       setLoading(false);
@@ -98,7 +95,7 @@ const ProvidersContent: React.FC<{ children: React.ReactNode }> = ({ children })
       isMounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, [router]);
+  }, [push]);
 
   // ÉCRAN DE CHARGEMENT
   if (loading) {
