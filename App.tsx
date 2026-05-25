@@ -143,7 +143,7 @@ const AppContent: React.FC = () => {
         </div>
       );
     }
-    return <HomePage onNavigate={(view) => push(view === 'home' ? '/' : `/${view}`)} />;
+    return <HomePage />;
   };
 
   return (
