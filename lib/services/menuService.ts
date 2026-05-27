@@ -1,109 +1,106 @@
 import { supabase } from '../supabaseClient';
 import type { MenuItem, MealOption } from '../../types/index';
 
-/** Récupère tous les plats disponibles avec leurs options */
+type MenuItemRow = {
+  id: string; name: string; description: string | null; price: number;
+  image_url: string | null; category: string; allergens: string[] | null;
+  stock_quantity: number; is_available: boolean; created_at: string;
+  meal_options?: MealOptionRow[];
+};
+type MealOptionRow = {
+  id: string; meal_id: string; name: string; price_modifier: number;
+  is_mandatory: boolean; created_at: string;
+};
+
+function rowToMenuItem(row: MenuItemRow): MenuItem {
+  return {
+    id: row.id, name: row.name, description: row.description,
+    price: row.price, image_url: row.image_url, category: row.category,
+    allergens: row.allergens, stock_quantity: row.stock_quantity,
+    is_available: row.is_available,
+    meal_options: (row.meal_options ?? []).map((o) => ({
+      id: o.id, meal_id: o.meal_id, name: o.name,
+      price_modifier: o.price_modifier, is_mandatory: o.is_mandatory,
+    })),
+  };
+}
+
 export async function getMenuItems(): Promise<MenuItem[]> {
   const { data, error } = await supabase
     .from('menu_items')
     .select('*, meal_options(*)')
-    .order('category')
-    .order('name');
-
+    .order('category').order('name');
   if (error) throw new Error(error.message);
-  return (data as MenuItem[]) || [];
+  return ((data as MenuItemRow[]) ?? []).map(rowToMenuItem);
 }
 
-/** Récupère les plats disponibles uniquement (pour clients) */
 export async function getAvailableMenuItems(): Promise<MenuItem[]> {
   const { data, error } = await supabase
     .from('menu_items')
     .select('*, meal_options(*)')
     .eq('is_available', true)
     .gt('stock_quantity', 0)
-    .order('category')
-    .order('name');
-
+    .order('category').order('name');
   if (error) throw new Error(error.message);
-  return (data as MenuItem[]) || [];
+  return ((data as MenuItemRow[]) ?? []).map(rowToMenuItem);
 }
 
-/** Crée un nouveau plat avec ses options */
 export async function createMenuItem(
   item: Omit<MenuItem, 'id' | 'meal_options'>,
   options: Omit<MealOption, 'id' | 'meal_id'>[]
 ): Promise<MenuItem> {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase
     .from('menu_items')
     .insert({
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      image_url: item.image_url,
-      category: item.category,
-      allergens: item.allergens,
-      stock_quantity: item.stock_quantity,
-      is_available: item.is_available,
+      name: item.name, description: item.description, price: item.price,
+      image_url: item.image_url, category: item.category, allergens: item.allergens,
+      stock_quantity: item.stock_quantity, is_available: item.is_available,
     })
     .select()
-    .single();
-
+    .single() as any);
   if (error) throw new Error(error.message);
 
   if (options.length > 0) {
-    const { error: optErr } = await supabase
+    const { error: optErr } = await (supabase
       .from('meal_options')
-      .insert(options.map((o) => ({ ...o, meal_id: data.id })));
+      .insert(options.map((o) => ({ ...o, meal_id: data.id }))) as any);
     if (optErr) throw new Error(optErr.message);
   }
-
-  return { ...data, meal_options: [] } as MenuItem;
+  return rowToMenuItem({ ...data, meal_options: [] });
 }
 
-/** Met à jour un plat et synchronise ses options */
 export async function updateMenuItem(
   id: string,
   item: Partial<Omit<MenuItem, 'id' | 'meal_options'>>,
   options?: Omit<MealOption, 'id' | 'meal_id'>[]
 ): Promise<void> {
-  const { error } = await supabase
-    .from('menu_items')
-    .update(item)
-    .eq('id', id);
-
+  const { error } = await (supabase.from('menu_items').update(item as any).eq('id', id) as any);
   if (error) throw new Error(error.message);
 
   if (options !== undefined) {
-    // Supprimer les anciennes options puis réinsérer
-    await supabase.from('meal_options').delete().eq('meal_id', id);
+    await (supabase.from('meal_options').delete().eq('meal_id', id) as any);
     if (options.length > 0) {
-      const { error: optErr } = await supabase
+      const { error: optErr } = await (supabase
         .from('meal_options')
-        .insert(options.map((o) => ({ ...o, meal_id: id })));
+        .insert(options.map((o) => ({ ...o, meal_id: id }))) as any);
       if (optErr) throw new Error(optErr.message);
     }
   }
 }
 
-/** Supprime un plat et ses options (cascade) */
 export async function deleteMenuItem(id: string): Promise<void> {
-  // Supprimer les options d'abord
-  await supabase.from('meal_options').delete().eq('meal_id', id);
-  const { error } = await supabase.from('menu_items').delete().eq('id', id);
+  await (supabase.from('meal_options').delete().eq('meal_id', id) as any);
+  const { error } = await (supabase.from('menu_items').delete().eq('id', id) as any);
   if (error) throw new Error(error.message);
 }
 
-/** Décrémente le stock d'un plat après commande */
 export async function decrementStock(menuItemId: string, quantity: number): Promise<void> {
-  const { data } = await supabase
-    .from('menu_items')
-    .select('stock_quantity')
-    .eq('id', menuItemId)
-    .single();
-
+  const { data } = await (supabase
+    .from('menu_items').select('stock_quantity').eq('id', menuItemId).single() as any);
   if (!data) return;
-  const newStock = Math.max(0, data.stock_quantity - quantity);
-  await supabase
+  const newStock = Math.max(0, (data as MenuItemRow).stock_quantity - quantity);
+  await (supabase
     .from('menu_items')
     .update({ stock_quantity: newStock, is_available: newStock > 0 })
-    .eq('id', menuItemId);
+    .eq('id', menuItemId) as any);
 }

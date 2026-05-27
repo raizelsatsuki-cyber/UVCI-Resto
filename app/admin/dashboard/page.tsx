@@ -134,7 +134,7 @@ export default function AdminDashboard() {
   const openModal = (item?: MenuItem) => {
     if (item) {
       setEditingId(item.id);
-      setEditingItem({ ...item, meal_options: item.meal_options ?? [] });
+      setEditingItem({ ...item, description: item.description ?? '', image_url: item.image_url ?? '', allergens: item.allergens ?? [], meal_options: item.meal_options ?? [] });
     } else {
       setEditingId(null);
       setEditingItem(emptyItem());

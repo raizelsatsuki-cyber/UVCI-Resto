@@ -34,7 +34,7 @@ function RouterView() {
     }
     return <AdminDashboard />;
   }
-  return <HomePage onNavigate={(v) => { window.location.hash = v === 'home' ? '/' : `/${v}`; }} />;
+  return <HomePage />;
 }
 
 /** Contenu principal — protégé par Auth */

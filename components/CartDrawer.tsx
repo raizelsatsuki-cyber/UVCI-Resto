@@ -61,7 +61,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             cart.map((item) => (
               <div key={item.id} className="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm flex gap-4 items-center">
                 <div className="w-20 h-20 rounded-xl overflow-hidden border border-gray-100 flex-shrink-0 relative">
-                  <img src={item.menu_item.image_url} alt="" className="w-full h-full object-cover" />
+                  <img src={item.menu_item.image_url ?? ''} alt="" className="w-full h-full object-cover" />
                 </div>
                 
                 <div className="flex-grow min-w-0">
