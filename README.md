@@ -1,5 +1,5 @@
 
-# 🍽️ UVCI Resto App
+# UVCI Resto App
 
 **Une solution complète de gestion de restauration universitaire.**
 
@@ -15,7 +15,7 @@
 
 L'application résout les problèmes de files d'attente et de gestion de stock grâce à une interface intuitive et réactive.
 
-## ✨ Fonctionnalités Clés
+## Fonctionnalités Clés
 
 ### 👤 Espace Client (Étudiants & Personnel)
 *   **Menu Interactif & Temps Réel :** Affichage des plats avec filtrage par catégorie et recherche instantanée.
@@ -24,7 +24,7 @@ L'application résout les problèmes de files d'attente et de gestion de stock g
 *   **Paiement Flexible :** Simulation d'intégration **Wave** (Mobile Money) ou paiement Espèces.
 *   **Historique & Suivi :** Page "Mes Commandes" avec code couleur pour le statut (*En préparation* 🟠, *Disponible* 🔵, *Terminée* 🟢).
 
-### 👮 Espace Administrateur (Back-Office)
+###  Espace Administrateur (Back-Office)
 *   **Dashboard Sécurisé :** Accès restreint aux administrateurs.
 *   **Flux de Commandes Live :** Vue d'ensemble des commandes entrantes.
 *   **Détails de Commande :** Visualisation précise des plats commandés **ET** des options choisies par le client.
