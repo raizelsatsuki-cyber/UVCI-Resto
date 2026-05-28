@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MenuItem, SelectedOption } from '../../types/index';
 import { MenuItemsGrid } from '../../components/MenuItemsGrid';
 import { MealOptionsModal } from '../../components/MealOptionsModal';
@@ -17,7 +17,9 @@ const CATEGORIES = ['Tout', 'Petit-déjeuner', 'Entrée', 'Plat', 'Dessert', 'Bo
 export default function MenuPage() {
   const { addToCart } = useCart();
   const { user } = useAuth();
-  const router = useRouter();
+  const router    = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => { routerRef.current = router; }, [router]);
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,18 +45,23 @@ export default function MenuPage() {
     fetchMenu();
 
     // Realtime : rechargement si le menu change
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const debouncedFetch = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(fetchMenu, 800);
+    };
     const channel = supabase
       .channel('menu_items:changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, fetchMenu)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, debouncedFetch)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { clearTimeout(debounceTimer); supabase.removeChannel(channel); };
   }, [fetchMenu]);
 
   const handleAddToCart = (item: MenuItem) => {
     if (!user) {
       toast.info('Connectez-vous pour ajouter au panier.');
-      router.push('/auth/login');
+      routerRef.current.push('/auth/login');
       return;
     }
     if (item.meal_options && item.meal_options.length > 0) {

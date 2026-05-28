@@ -5,7 +5,7 @@ import { User } from '../types/index';
 import { ShoppingCart, Wallet, LayoutDashboard, Utensils, Info, Home, LogOut, ListOrdered } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { CartSidebar } from './CartSidebar';
-import { supabase } from '../lib/supabaseClient';
+import { signOut } from '../lib/services/authService';
 // CHANGEMENT ICI
 import { useRouter, usePathname } from '../lib/routerContext';
 
@@ -24,9 +24,13 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    // Rediriger vers la page de login
-    router.push('/auth/login');
+    try {
+      await signOut();
+      // FIX 2 : pas besoin de router.push — AuthContext détecte SIGNED_OUT
+      // et App.tsx affiche automatiquement LoginPage quand user=null
+    } catch (err) {
+      console.error('Erreur déconnexion:', err);
+    }
   };
 
   // Helper to determine active state
