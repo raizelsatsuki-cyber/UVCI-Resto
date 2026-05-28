@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -14,19 +14,18 @@ import ClientOrdersPage from './app/orders/page';
 import AdminDashboard from './app/admin/dashboard/page';
 import AboutPage from './app/about/page';
 
-/** Rendu de la vue courante selon le chemin hash */
 function RouterView() {
   const pathname = usePathname();
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
 
-  if (pathname === '/menu') return <div className="container mx-auto px-4 pb-20 pt-6"><MenuPage /></div>;
+  if (pathname === '/menu')  return <div className="container mx-auto px-4 pb-20 pt-6"><MenuPage /></div>;
   if (pathname === '/orders') return <ClientOrdersPage />;
-  if (pathname === '/about') return <div className="container mx-auto px-4 pt-8"><AboutPage /></div>;
+  if (pathname === '/about')  return <div className="container mx-auto px-4 pt-8"><AboutPage /></div>;
   if (pathname === '/admin') {
     if (profile?.role !== 'admin') {
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-          <p className="text-4xl mb-4">🔒</p>
+          <p className="text-5xl mb-4">🔒</p>
           <h2 className="text-xl font-bold text-gray-700 mb-2">Accès refusé</h2>
           <p className="text-gray-500">Cette section est réservée aux administrateurs.</p>
         </div>
@@ -37,11 +36,11 @@ function RouterView() {
   return <HomePage />;
 }
 
-/** Contenu principal — protégé par Auth */
 function AppContent() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, unauthorizedEmail } = useAuth();
   const pathname = usePathname();
 
+  /* Chargement initial */
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-uvci-purple">
@@ -51,6 +50,28 @@ function AppContent() {
     );
   }
 
+  /* Email Google non-UVCI détecté — déconnexion déjà effectuée dans AuthContext */
+  if (unauthorizedEmail) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 text-center px-4">
+        <AlertTriangle size={52} className="text-red-400 mb-4" />
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Compte non autorisé</h2>
+        <p className="text-gray-500 mb-6 max-w-sm">
+          Seuls les comptes <strong>@uvci.edu.ci</strong> sont acceptés.
+          Veuillez vous connecter avec votre adresse institutionnelle.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-6 py-3 bg-uvci-purple text-white font-bold rounded-xl hover:bg-uvci-purple/90 transition"
+        >
+          Réessayer
+        </button>
+        <ToastContainer position="top-center" autoClose={4000} />
+      </div>
+    );
+  }
+
+  /* Non connecté → page de login */
   if (!user) {
     return (
       <>
@@ -60,7 +81,6 @@ function AppContent() {
     );
   }
 
-  // Construit l'objet User pour la Navbar (compatible avec le type local)
   const navUser = {
     id: user.id,
     email: user.email ?? '',
@@ -74,19 +94,11 @@ function AppContent() {
       <main className={pathname !== '/' && pathname !== '' ? 'pt-24' : 'pt-20'}>
         <RouterView />
       </main>
-      <ToastContainer
-        position="bottom-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        closeOnClick
-        pauseOnHover
-        theme="light"
-      />
+      <ToastContainer position="bottom-right" autoClose={3000} closeOnClick pauseOnHover theme="light" />
     </div>
   );
 }
 
-/** Racine de l'application — providers imbriqués */
 export default function App() {
   return (
     <AuthProvider>
