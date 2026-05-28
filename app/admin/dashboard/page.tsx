@@ -95,9 +95,14 @@ export default function AdminDashboard() {
     return () => { channel.unsubscribe(); };
   }, [user, profile, authLoading, fetchOrders, preloadOptions]);
 
+  // Charger le menu une seule fois quand on arrive sur l'onglet menu
+  const menuLoadedRef = React.useRef(false);
   useEffect(() => {
-    if (activeTab === 'menu' && menuItems.length === 0) fetchMenu();
-  }, [activeTab, fetchMenu, menuItems.length]);
+    if (activeTab === 'menu' && !menuLoadedRef.current) {
+      menuLoadedRef.current = true;
+      fetchMenu();
+    }
+  }, [activeTab, fetchMenu]);
 
   // Garde admin
   if (authLoading) {
