@@ -125,7 +125,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
             {/* Cart Button */}
             <button 
               onClick={toggleSidebar}
-              className="relative group bg-white p-2.5 rounded-xl border border-gray-100 border-b-4 border-gray-200 hover:bg-gray-50 active:border-b-0 active:translate-y-1 transition-all"
+              className="relative group bg-white p-2.5 rounded-xl border-b-4 border-gray-200 hover:bg-gray-50 active:border-b-0 active:translate-y-1 transition-all"
             >
               <ShoppingCart className="w-5 h-5 text-uvci-purple" />
               {cartCount > 0 && (
