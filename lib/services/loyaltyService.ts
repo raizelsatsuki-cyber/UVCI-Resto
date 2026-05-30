@@ -26,12 +26,11 @@ export async function getLoyaltyBalance(userId: string): Promise<number> {
 
 /** Racheter des points via la fonction RPC sécurisée */
 export async function redeemPoints(userId: string, points: number, description: string): Promise<number> {
-  const { data, error } = await (supabase
-    .rpc('redeem_loyalty_points', {
+  const { data, error } = await (supabase.rpc as any)('redeem_loyalty_points', {
       p_user_id: userId,
       p_points: points,
       p_description: description,
-    }) as any);
+    });
   if (error) throw new Error(error.message);
   const result = data as any;
   if (!result.success) throw new Error(result.error ?? 'Rachat impossible');
