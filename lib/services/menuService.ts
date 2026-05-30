@@ -31,7 +31,7 @@ export async function getMenuItems(): Promise<MenuItem[]> {
     .select('*, meal_options(*)')
     .order('category').order('name');
   if (error) throw new Error(error.message);
-  return ((data as MenuItemRow[]) ?? []).map(rowToMenuItem);
+  return ((data as unknown as MenuItemRow[]) ?? []).map(rowToMenuItem);
 }
 
 export async function getAvailableMenuItems(): Promise<MenuItem[]> {
@@ -42,7 +42,7 @@ export async function getAvailableMenuItems(): Promise<MenuItem[]> {
     .gt('stock_quantity', 0)
     .order('category').order('name');
   if (error) throw new Error(error.message);
-  return ((data as MenuItemRow[]) ?? []).map(rowToMenuItem);
+  return ((data as unknown as MenuItemRow[]) ?? []).map(rowToMenuItem);
 }
 
 export async function createMenuItem(
