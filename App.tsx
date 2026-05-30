@@ -75,8 +75,19 @@ function RouterView() {
 function AppContent() {
   const { user, profile, loading, unauthorizedEmail } = useAuth();
   const pathname = usePathname();
+  const searchParams = useSearchParams(); // eslint-disable-line @typescript-eslint/no-unused-vars
 
-  /* Spinner de chargement initial — max 4s (timeout dans AuthContext) */
+  /* Les pages de résultat de paiement sont publiques — affichées immédiatement */
+  if (pathname === '/commande/succes' || pathname === '/commande/echec') {
+    return (
+      <div className="min-h-screen bg-gray-100">
+        <RouterView />
+        <ToastContainer position="bottom-right" autoClose={3000} theme="light" />
+      </div>
+    );
+  }
+
+  /* Spinner de chargement initial — max 2s (timeout dans AuthContext) */
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-uvci-purple">
