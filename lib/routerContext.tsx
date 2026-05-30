@@ -1,63 +1,52 @@
 'use client';
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-// --- TYPES ---
 interface RouterContextType {
-  push: (path: string) => void;
-  pathname: string;
+  push:     (path: string) => void;
+  pathname: string;   // chemin seul, sans query string
+  search:   string;   // query string complet (ex: "?order=abc")
 }
 
 const RouterContext = createContext<RouterContextType | undefined>(undefined);
 
-// --- HOOKS ---
-
 export const useRouter = () => {
-  const context = useContext(RouterContext);
-  if (!context) {
-    // Fallback de sécurité : permet une navigation basique même hors contexte
-    return { push: (path: string) => { window.location.hash = path; } };
-  }
-  return { push: context.push };
+  const ctx = useContext(RouterContext);
+  if (!ctx) return { push: (path: string) => { window.location.hash = path; } };
+  return { push: ctx.push };
 };
 
-export const usePathname = () => {
-  const context = useContext(RouterContext);
-  // Retourne '/' par défaut si le contexte n'est pas encore monté
-  return context?.pathname || '/';
+export const usePathname = () => useContext(RouterContext)?.pathname ?? '/';
+
+/** Retourne les query params de l'URL courante */
+export const useSearchParams = () => {
+  const search = useContext(RouterContext)?.search ?? '';
+  return new URLSearchParams(search.replace(/^\?/, ''));
 };
 
-// --- PROVIDER ---
-// Implémentation d'un routeur basé sur le Hash (#) pour compatibilité universelle
-// (Fonctionne à la fois en SPA via index.tsx et en déploiement statique)
 export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentPath, setCurrentPath] = useState('/');
+  const [state, setState] = useState({ pathname: '/', search: '' });
+
+  const parseHash = () => {
+    const raw  = window.location.hash.replace(/^#/, '') || '/';
+    const qIdx = raw.indexOf('?');
+    if (qIdx === -1) return { pathname: raw, search: '' };
+    return {
+      pathname: raw.slice(0, qIdx),          // ex: /commande/succes
+      search:   raw.slice(qIdx),             // ex: ?order=abc123
+    };
+  };
 
   useEffect(() => {
-    // Fonction pour lire le hash actuel (sans le #)
-    const getHashPath = () => {
-      const hash = window.location.hash.replace(/^#/, '');
-      return hash || '/';
-    };
-
-    const onHashChange = () => {
-      setCurrentPath(getHashPath());
-    };
-
-    // Initialisation
-    setCurrentPath(getHashPath());
-
-    // Écoute des changements
+    const onHashChange = () => setState(parseHash());
+    setState(parseHash());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const push = (path: string) => {
-    window.location.hash = path;
-  };
+  const push = (path: string) => { window.location.hash = path; };
 
   return (
-    <RouterContext.Provider value={{ push, pathname: currentPath }}>
+    <RouterContext.Provider value={{ push, ...state }}>
       {children}
     </RouterContext.Provider>
   );
