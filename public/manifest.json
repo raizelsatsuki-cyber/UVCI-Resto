@@ -1,0 +1,14 @@
+{
+  "name": "Resto UVCI",
+  "short_name": "Resto UVCI",
+  "description": "Commandez vos repas sur le campus UVCI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#7D2E8D",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

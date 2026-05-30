@@ -35,8 +35,15 @@ export interface SelectedOption {
   price_modifier: number;
 }
 
-/** Statuts DB (snake_case uniquement — les variantes capitalisées sont abandonnées) */
-export type OrderStatus = 'pending' | 'ready' | 'delivered';
+export type OrderStatus =
+  | 'pending_payment'
+  | 'paid'
+  | 'preparing'
+  | 'ready'
+  | 'completed'
+  | 'cancelled'
+  | 'pending'
+  | 'delivered';
 
 export interface OrderItem {
   id: string;
@@ -55,6 +62,11 @@ export interface Order {
   status: OrderStatus;
   total_price: number;
   payment_method: 'wave' | 'cash';
+  wave_checkout_id?: string | null;
+  wave_transaction_id?: string | null;
+  paid_at?: string | null;
+  pickup_qr_token?: string | null;
+  qr_used?: boolean;
   created_at: string;
   order_items?: OrderItem[];
 }
@@ -65,3 +77,36 @@ export interface CartItem {
   quantity: number;
   selectedOptions: SelectedOption[];
 }
+
+export interface LoyaltyTransaction {
+  id: string;
+  user_id: string;
+  order_id?: string | null;
+  points: number;
+  transaction_type: 'earn' | 'redeem' | 'expire';
+  description?: string | null;
+  created_at: string;
+}
+
+export interface PushSubscription {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth_key: string;
+  created_at: string;
+}
+
+export interface Reward {
+  id: string;
+  points_required: number;
+  label: string;
+  description: string;
+  discount_fcfa?: number;
+  free_meal?: boolean;
+}
+
+export const REWARDS: Reward[] = [
+  { id: 'r1', points_required: 100, label: '-500 FCFA',   description: 'Réduction de 500 FCFA sur votre prochaine commande', discount_fcfa: 500 },
+  { id: 'r2', points_required: 200, label: 'Repas gratuit', description: 'Un repas offert (jusqu\'à 2 000 FCFA)', free_meal: true },
+];

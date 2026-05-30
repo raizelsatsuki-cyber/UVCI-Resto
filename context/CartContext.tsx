@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useMemo } from 'react';
 import { MenuItem, CartItem, SelectedOption } from '../types/index';
 import { processOrder, ProcessOrderResult } from '../lib/services/orderService';
+import { createWaveCheckout } from '../lib/services/waveService';
 
 type PaymentMethod = 'wave' | 'cash';
 
@@ -20,73 +21,53 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems]     = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wave');
 
   const addToCart = (item: MenuItem, options: SelectedOption[] = []) => {
-    setCartItems((prev) => {
-      const optionsKey = JSON.stringify([...options].sort((a, b) => a.name.localeCompare(b.name)));
-      const idx = prev.findIndex(
-        (i) =>
-          i.menu_item.id === item.id &&
-          JSON.stringify([...i.selectedOptions].sort((a, b) => a.name.localeCompare(b.name))) === optionsKey
+    setCartItems(prev => {
+      const optKey = JSON.stringify([...options].sort((a, b) => a.name.localeCompare(b.name)));
+      const idx = prev.findIndex(i =>
+        i.menu_item.id === item.id &&
+        JSON.stringify([...i.selectedOptions].sort((a, b) => a.name.localeCompare(b.name))) === optKey
       );
-      if (idx > -1) {
-        const updated = [...prev];
-        updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + 1 };
-        return updated;
-      }
+      if (idx > -1) { const u = [...prev]; u[idx] = { ...u[idx], quantity: u[idx].quantity + 1 }; return u; }
       return [...prev, { id: crypto.randomUUID(), menu_item: item, quantity: 1, selectedOptions: options }];
     });
   };
 
-  const removeFromCart = (itemId: string) =>
-    setCartItems((prev) => prev.filter((i) => i.id !== itemId));
-
+  const removeFromCart = (itemId: string) => setCartItems(p => p.filter(i => i.id !== itemId));
   const updateQuantity = (itemId: string, delta: number) =>
-    setCartItems((prev) =>
-      prev
-        .map((i) => (i.id === itemId ? { ...i, quantity: i.quantity + delta } : i))
-        .filter((i) => i.quantity > 0)
-    );
-
+    setCartItems(p => p.map(i => i.id === itemId ? { ...i, quantity: i.quantity + delta } : i).filter(i => i.quantity > 0));
   const clearCart = () => setCartItems([]);
 
-  const totalAmount = useMemo(
-    () =>
-      cartItems.reduce((sum, item) => {
-        const optsPrice = item.selectedOptions.reduce((s, o) => s + o.price_modifier, 0);
-        return sum + (item.menu_item.price + optsPrice) * item.quantity;
-      }, 0),
-    [cartItems]
-  );
+  const totalAmount = useMemo(() =>
+    cartItems.reduce((sum, item) => {
+      const optsPrice = item.selectedOptions.reduce((s, o) => s + o.price_modifier, 0);
+      return sum + (item.menu_item.price + optsPrice) * item.quantity;
+    }, 0), [cartItems]);
 
-  const cartCount = useMemo(
-    () => cartItems.reduce((n, i) => n + i.quantity, 0),
-    [cartItems]
-  );
+  const cartCount = useMemo(() => cartItems.reduce((n, i) => n + i.quantity, 0), [cartItems]);
 
   const placeOrder = async (phoneNumber: string): Promise<ProcessOrderResult> => {
-    const result = await processOrder(cartItems, phoneNumber, paymentMethod, totalAmount);
+    if (paymentMethod === 'wave') {
+      // Créer la commande d'abord, puis rediriger vers Wave
+      const result = await processOrder(cartItems, phoneNumber, 'wave', totalAmount);
+      if (result === 'success') {
+        // La commande est créée, récupérer son ID depuis orderService
+        // Wave redirection gérée dans CartSidebar via waveService
+        clearCart();
+      }
+      return result;
+    }
+    // Cash : flux normal
+    const result = await processOrder(cartItems, phoneNumber, 'cash', totalAmount);
     if (result === 'success') clearCart();
     return result;
   };
 
   return (
-    <CartContext.Provider
-      value={{
-        cartItems,
-        addToCart,
-        removeFromCart,
-        updateQuantity,
-        clearCart,
-        totalAmount,
-        cartCount,
-        paymentMethod,
-        setPaymentMethod,
-        placeOrder,
-      }}
-    >
+    <CartContext.Provider value={{ cartItems, addToCart, removeFromCart, updateQuantity, clearCart, totalAmount, cartCount, paymentMethod, setPaymentMethod, placeOrder }}>
       {children}
     </CartContext.Provider>
   );
