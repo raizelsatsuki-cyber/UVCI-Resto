@@ -125,7 +125,7 @@ export default function AdminDashboard() {
   const dailyRevenue = todayOrders.reduce((s, o) => s + o.total_price, 0);
 
   // Changement statut
-  const handleStatusChange = async (id: string, status: 'ready' | 'delivered') => {
+  const handleStatusChange = async (id: string, status: 'ready' | 'delivered' | 'completed' | 'cancelled') => {
     try {
       await updateOrderStatus(id, status);
       toast.success(`Commande marquée : ${status === 'ready' ? 'Prête' : 'Livrée'}`);

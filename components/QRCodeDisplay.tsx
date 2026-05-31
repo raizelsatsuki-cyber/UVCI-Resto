@@ -1,21 +1,25 @@
 import React, { useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 
 interface QRCodeDisplayProps {
   value: string;
   size?: number;
 }
 
+/**
+ * FIX : import dynamique depuis esm.sh remplacé par un import npm local (qrcode).
+ * L'import dynamique depuis un CDN externe est peu fiable en production (CSP, réseau, cache).
+ * De plus, l'ancien code utilisait `as any` et ne gérait pas le cas où le canvas n'est pas prêt.
+ */
 export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({ value, size = 180 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (!canvasRef.current || !value) return;
-    import('https://esm.sh/qrcode@1.5.3' as any).then(({ default: QRCode }: any) => {
-      QRCode.toCanvas(canvasRef.current, value, {
-        width: size,
-        margin: 2,
-        color: { dark: '#7D2E8D', light: '#FFFFFF' },
-      });
+    QRCode.toCanvas(canvasRef.current, value, {
+      width: size,
+      margin: 2,
+      color: { dark: '#7D2E8D', light: '#FFFFFF' },
     }).catch(console.error);
   }, [value, size]);
 

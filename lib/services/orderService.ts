@@ -1,5 +1,4 @@
 import { supabase } from '../supabaseClient';
-import { generateWaveLink } from '../waveUtils';
 import { decrementStock } from './menuService';
 import type { Order, CartItem } from '../../types/index';
 
@@ -22,9 +21,14 @@ export async function getUserOrders(userId: string): Promise<Order[]> {
   return (data as Order[]) ?? [];
 }
 
+/**
+ * FIX : updateOrderStatus accepte maintenant tous les statuts valides
+ * (était limité à 'pending' | 'ready' | 'delivered', manquait 'completed',
+ * 'paid', 'preparing', 'cancelled', 'pending_payment').
+ */
 export async function updateOrderStatus(
   orderId: string,
-  status: 'pending' | 'ready' | 'delivered'
+  status: 'pending' | 'pending_payment' | 'paid' | 'preparing' | 'ready' | 'delivered' | 'completed' | 'cancelled'
 ): Promise<void> {
   const { error } = await (supabase
     .from('orders')
@@ -33,8 +37,18 @@ export async function updateOrderStatus(
   if (error) throw new Error(error.message);
 }
 
-export type ProcessOrderResult = 'success' | 'failed' | 'unauthorized';
+export type ProcessOrderResult =
+  | { status: 'success'; orderId: string }
+  | { status: 'failed' }
+  | { status: 'unauthorized' };
 
+/**
+ * FIX 1 : retourne maintenant un objet { status, orderId } au lieu d'une string
+ *          pour que CartContext puisse récupérer l'orderId et appeler Wave.
+ * FIX 2 : le statut initial est 'pending_payment' pour Wave, 'pending' pour cash.
+ * FIX 3 : ne redirige plus directement vers Wave (géré dans CartContext).
+ * FIX 4 : price_at_order inclut les options sélectionnées (était juste item.price).
+ */
 export async function processOrder(
   cartItems: CartItem[],
   phoneNumber: string,
@@ -42,10 +56,12 @@ export async function processOrder(
   totalAmount: number
 ): Promise<ProcessOrderResult> {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) return 'unauthorized';
-  if (cartItems.length === 0) return 'failed';
+  if (authError || !user) return { status: 'unauthorized' };
+  if (cartItems.length === 0) return { status: 'failed' };
 
   try {
+    const initialStatus = paymentMethod === 'wave' ? 'pending_payment' : 'pending';
+
     const { data: order, error: orderError } = await (supabase
       .from('orders')
       .insert({
@@ -53,40 +69,45 @@ export async function processOrder(
         total_price: Math.round(totalAmount),
         client_phone: phoneNumber,
         payment_method: paymentMethod,
-        status: 'pending',
+        status: initialStatus,
       })
       .select()
       .single() as any);
 
-    if (orderError || !order) { console.error(orderError); return 'failed'; }
+    if (orderError || !order) { console.error(orderError); return { status: 'failed' }; }
 
-    const orderItemsPayload = cartItems.map((item) => ({
-      order_id: (order as any).id,
-      menu_item_id: item.menu_item.id,
-      quantity: item.quantity,
-      price_at_order: item.menu_item.price,
-      selected_option: item.selectedOptions
-        .map((o) => o.id)
-        .filter((id): id is string => Boolean(id)),
-    }));
+    const orderItemsPayload = cartItems.map((item) => {
+      // FIX 4 : prix unitaire = prix de base + modificateurs d'options
+      const optsPrice = item.selectedOptions.reduce((s, o) => s + o.price_modifier, 0);
+      return {
+        order_id: (order as any).id,
+        menu_item_id: item.menu_item.id,
+        quantity: item.quantity,
+        price_at_order: item.menu_item.price + optsPrice,
+        selected_option: item.selectedOptions
+          .map((o) => o.id)
+          .filter((id): id is string => Boolean(id)),
+      };
+    });
 
-    const { error: itemsError } = await (supabase.from('order_items').insert(orderItemsPayload) as any);
+    const { error: itemsError } = await (supabase
+      .from('order_items')
+      .insert(orderItemsPayload) as any);
+
     if (itemsError) {
+      // Rollback commande si les items échouent
       await (supabase.from('orders').delete().eq('id', (order as any).id) as any);
-      return 'failed';
+      return { status: 'failed' };
     }
 
     await Promise.allSettled(
       cartItems.map((item) => decrementStock(item.menu_item.id, item.quantity))
     );
 
-    if (paymentMethod === 'wave') {
-      window.location.href = generateWaveLink(totalAmount);
-    }
-    return 'success';
+    return { status: 'success', orderId: (order as any).id };
   } catch (err) {
     console.error('processOrder exception:', err);
-    return 'failed';
+    return { status: 'failed' };
   }
 }
 

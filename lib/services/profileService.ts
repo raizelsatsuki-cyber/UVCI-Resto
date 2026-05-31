@@ -13,10 +13,10 @@ export async function getProfile(userId: string): Promise<Profile | null> {
   return data as Profile;
 }
 
-export async function updateBalancePoints(userId: string, delta: number) {
+export async function updateBalancePoints(userId: string, delta: number): Promise<number> {
   const { data: profile } = await (supabase
     .from('profiles').select('balance_points').eq('id', userId).single() as any);
-  const current   = (profile as any)?.balance_points ?? 0;
+  const current    = (profile as any)?.balance_points ?? 0;
   const newBalance = Math.max(0, current + delta);
   const { error } = await (supabase
     .from('profiles').update({ balance_points: newBalance }).eq('id', userId) as any);
@@ -24,10 +24,14 @@ export async function updateBalancePoints(userId: string, delta: number) {
   return newBalance;
 }
 
+/**
+ * FIX : le rôle par défaut est maintenant 'student' (aligné avec UserRole dans database.types.ts).
+ * Précédemment c'était 'client', qui n'existe pas dans le type UserRole.
+ */
 export async function ensureProfile(userId: string, email: string): Promise<Profile | null> {
   const existing = await getProfile(userId);
   if (existing) return existing;
-  const role = email === 'resto@uvci.edu.ci' ? 'admin' : 'client';
+  const role = email === 'resto@uvci.edu.ci' ? 'admin' : 'student';
   const { data, error } = await (supabase
     .from('profiles')
     .insert({ id: userId, email, role, balance_points: 0 })

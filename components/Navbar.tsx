@@ -1,13 +1,11 @@
-
-
 import React, { useState } from 'react';
 import { User } from '../types/index';
 import { ShoppingCart, Wallet, LayoutDashboard, Utensils, Info, Home, LogOut, ListOrdered } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { CartSidebar } from './CartSidebar';
 import { signOut } from '../lib/services/authService';
-// CHANGEMENT ICI
 import { useRouter, usePathname } from '../lib/routerContext';
+import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
   user: User;
@@ -15,25 +13,19 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ user }) => {
   const { cartCount } = useCart();
+  const { isAdmin }   = useAuth(); // FIX : lecture isAdmin depuis le contexte (source de vérité)
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const router = useRouter();
+  const router   = useRouter();
   const pathname = usePathname();
-
-  const toggleSidebar = () => {
-    setIsCartOpen(!isCartOpen);
-  };
 
   const handleLogout = async () => {
     try {
       await signOut();
-      // FIX 2 : pas besoin de router.push — AuthContext détecte SIGNED_OUT
-      // et App.tsx affiche automatiquement LoginPage quand user=null
     } catch (err) {
       console.error('Erreur déconnexion:', err);
     }
   };
 
-  // Helper to determine active state
   const isActive = (path: string) => {
     if (path === '/' && (pathname === '/' || pathname === '')) return true;
     if (path !== '/' && pathname.startsWith(path)) return true;
@@ -45,7 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
       <div className="fixed top-4 left-0 right-0 z-50 flex justify-center px-4">
         <nav className="w-full max-w-6xl bg-white/80 backdrop-blur-md border border-white/40 rounded-2xl shadow-lg px-4 py-3 flex items-center justify-between">
           {/* Logo */}
-          <div 
+          <div
             className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
             onClick={() => router.push('/')}
           >
@@ -59,72 +51,69 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
 
           {/* Navigation Links (Desktop) */}
           <div className="hidden md:flex items-center gap-1 bg-gray-100/50 p-1 rounded-xl border border-gray-200/50">
-              <button 
-                  onClick={() => router.push('/')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            <button
+              onClick={() => router.push('/')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Home size={16} /> Accueil
+            </button>
+            <button
+              onClick={() => router.push('/menu')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/menu') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Utensils size={16} /> Menu
+            </button>
+            <button
+              onClick={() => router.push('/orders')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/orders') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <ListOrdered size={16} /> Commandes
+            </button>
+            <button
+              onClick={() => router.push('/about')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/about') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Info size={16} /> Infos
+            </button>
+            {/* FIX : lien Admin masqué pour les non-admins */}
+            {isAdmin && (
+              <button
+                onClick={() => router.push('/admin')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/admin') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                  <Home size={16} />
-                  Accueil
+                <LayoutDashboard size={16} /> Admin
               </button>
-              <button 
-                  onClick={() => router.push('/menu')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/menu') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                  <Utensils size={16} />
-                  Menu
-              </button>
-              <button 
-                  onClick={() => router.push('/orders')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/orders') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                  <ListOrdered size={16} />
-                  Commandes
-              </button>
-              <button 
-                  onClick={() => router.push('/about')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/about') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                  <Info size={16} />
-                  Infos
-              </button>
-              <button 
-                  onClick={() => router.push('/admin')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isActive('/admin') ? 'bg-white text-uvci-purple shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                  <LayoutDashboard size={16} />
-                  Admin
-              </button>
+            )}
           </div>
 
           {/* Actions */}
           <div className="flex items-center gap-2 sm:gap-4">
-            {/* Balance Chip */}
             <div className="hidden sm:flex items-center gap-2 bg-gray-100/80 px-4 py-2 rounded-xl border-b-2 border-gray-200">
               <Wallet className="w-4 h-4 text-uvci-green" />
               <span className="font-bold text-gray-700 text-sm">{user.balance_points} pts</span>
             </div>
 
-            {/* Admin Mobile Access (Always visible on mobile) */}
-            <button
-              onClick={() => router.push('/admin')}
-              className={`md:hidden p-2.5 rounded-xl border transition-all ${isActive('/admin') ? 'bg-uvci-purple text-white border-uvci-purple' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'}`}
-              title="Administration"
-            >
-               <LayoutDashboard size={20} />
-            </button>
+            {/* FIX : bouton Admin mobile masqué pour les non-admins */}
+            {isAdmin && (
+              <button
+                onClick={() => router.push('/admin')}
+                className={`md:hidden p-2.5 rounded-xl border transition-all ${isActive('/admin') ? 'bg-uvci-purple text-white border-uvci-purple' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'}`}
+                title="Administration"
+              >
+                <LayoutDashboard size={20} />
+              </button>
+            )}
 
-             {/* Order History Mobile Access */}
             <button
               onClick={() => router.push('/orders')}
               className={`md:hidden p-2.5 rounded-xl border transition-all ${isActive('/orders') ? 'bg-uvci-purple text-white border-uvci-purple' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'}`}
               title="Mes Commandes"
             >
-               <ListOrdered size={20} />
+              <ListOrdered size={20} />
             </button>
 
-            {/* Cart Button */}
-            <button 
-              onClick={toggleSidebar}
+            <button
+              onClick={() => setIsCartOpen(true)}
               className="relative group bg-white p-2.5 rounded-xl border-b-4 border-gray-200 hover:bg-gray-50 active:border-b-0 active:translate-y-1 transition-all"
             >
               <ShoppingCart className="w-5 h-5 text-uvci-purple" />
@@ -134,9 +123,8 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
                 </span>
               )}
             </button>
-            
-            {/* Logout Button */}
-            <button 
+
+            <button
               onClick={handleLogout}
               className="p-2.5 bg-white rounded-xl border border-gray-100 hover:border-red-200 hover:bg-red-50 hover:text-red-500 text-gray-400 transition-all"
               title="Se déconnecter"
