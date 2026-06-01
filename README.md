@@ -45,21 +45,7 @@ L'application résout les problèmes de files d'attente et de gestion de stock g
 
 ---
 
-## 🔐 Identifiants de Démonstration
-
-Pour tester l'application, utilisez les comptes suivants :
-
-### 👑 Accès Administrateur (Gestion complète)
-*   **Email :** `resto@uvci.edu.ci`
-*   **Mot de passe :** `@resto5599`
-
-### 🎓 Accès Étudiant (Simulation)
-*   **Email :** `etudiant@uvci.edu.ci` *(Ou créez un compte via "Inscription")*
-*   **Note :** L'inscription est restreinte aux emails se terminant par `@uvci.edu.ci`.
-
----
-
-## ⚙️ Installation & Démarrage
+## Installation & Démarrage
 
 ### 1. Cloner le projet
 ```bash
@@ -76,8 +62,8 @@ npm install
 Créez un fichier `.env.local` à la racine du projet :
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=votre_url_supabase
-NEXT_PUBLIC_SUPABASE_ANON_KEY=votre_cle_anon_publique
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
 ### 4. Lancer le serveur de développement
@@ -88,7 +74,7 @@ Accédez à l'application via `http://localhost:3000`.
 
 ---
 
-## 🗄️ Structure de la Base de Données (Aperçu)
+##  Structure de la Base de Données (Aperçu)
 
 *   `users` (public) : Extension de la table auth pour les clés étrangères.
 *   `profiles` : Rôles utilisateurs (admin/student).
