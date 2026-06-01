@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from '../../lib/routerContext';
 import { getUserOrders, cancelOrder } from '../../lib/services/orderService';
@@ -9,8 +9,7 @@ import { Card3D } from '../../components/ui/Card3D';
 import type { Order } from '../../types/index';
 import {
   ArrowLeft, Bell, BellOff, Loader2, User, Camera, Save,
-  ShoppingBag, Clock, CheckCircle, XCircle, Package, BellRing,
-  ChevronRight, Settings, Shield,
+  ShoppingBag, CheckCircle, XCircle, ChevronRight, Settings, Shield,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -32,27 +31,16 @@ function MiniStatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CFG[status] ?? { label: status, dot: 'bg-gray-400' };
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600">
-      <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
       {cfg.label}
     </span>
   );
 }
 
-/* ── Avatar avec initiales ──────────────────────────────── */
-function Avatar({ name, avatarUrl, size = 'lg' }: {
-  name: string; avatarUrl?: string | null; size?: 'sm' | 'lg';
-}) {
-  const dim = size === 'lg' ? 'w-20 h-20 text-2xl' : 'w-10 h-10 text-sm';
-  const initials = name
-    ? name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-    : '?';
-
-  if (avatarUrl) {
-    return (
-      <img src={avatarUrl} alt={name}
-        className={`${dim} rounded-2xl object-cover border-4 border-white shadow-lg`} />
-    );
-  }
+function Avatar({ name, avatarUrl, size = 'lg' }: { name: string; avatarUrl?: string | null; size?: 'sm' | 'lg' }) {
+  const dim      = size === 'lg' ? 'w-20 h-20 text-2xl' : 'w-10 h-10 text-sm';
+  const initials = name ? name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() : '?';
+  if (avatarUrl) return <img src={avatarUrl} alt={name} className={`${dim} rounded-2xl object-cover border-4 border-white shadow-lg`} />;
   return (
     <div className={`${dim} rounded-2xl bg-gradient-to-br from-uvci-purple to-uvci-green flex items-center justify-center text-white font-black border-4 border-white shadow-lg`}>
       {initials}
@@ -60,80 +48,72 @@ function Avatar({ name, avatarUrl, size = 'lg' }: {
   );
 }
 
-/* ── Onglets ────────────────────────────────────────────── */
 type Tab = 'profil' | 'commandes' | 'notifications';
 
-/* ══════════════════════════════════════════════════════════
-   Page principale
-══════════════════════════════════════════════════════════ */
 export default function ProfilePage() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, isAdmin } = useAuth();
   const router = useRouter();
 
-  const [tab, setTab]           = useState<Tab>('profil');
-  const [loading, setLoading]   = useState(true);
-  const [orders, setOrders]     = useState<Order[]>([]);
-  const [pushOn, setPushOn]     = useState(false);
-  const [pushLoading, setPushL] = useState(false);
-
-  /* Édition du profil */
-  const [editName, setEditName]     = useState('');
+  const [tab, setTab]             = useState<Tab>('profil');
+  const [loading, setLoading]     = useState(true);
+  const [orders, setOrders]       = useState<Order[]>([]);
+  const [pushOn, setPushOn]       = useState(false);
+  const [pushLoading, setPushL]   = useState(false);
+  const [editName, setEditName]   = useState('');
   const [editAvatar, setEditAvatar] = useState('');
-  const [saving, setSaving]         = useState(false);
-  const [editMode, setEditMode]     = useState(false);
-
-  /* Annulation */
+  const [saving, setSaving]       = useState(false);
+  const [editMode, setEditMode]   = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
-  const mountedRef = useRef(true);
+  // Refs stables — ne déclenchent jamais de re-render ni de boucle
+  const mountedRef    = useRef(true);
+  const dataLoadedRef = useRef(false); // garde-fou : ne charger qu'une seule fois
 
-  const userId = user?.id ?? null;
-
-  const load = useCallback(async () => {
-    if (!userId) return;
-    try {
-      const [ords, sub] = await Promise.all([
-        getUserOrders(userId),
-        isPushSupported() ? isSubscribed() : Promise.resolve(false),
-      ]);
-      if (mountedRef.current) {
-        setOrders(ords);
-        setPushOn(sub);
-      }
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  }, [userId]);
-
-  // Ref stable pour router (évite de l'ajouter aux deps)
-  const routerRef = useRef(router);
-  useEffect(() => { routerRef.current = router; }, [router]);
-
-  // Ref stable pour profile (évite la boucle)
-  const profileRef = useRef(profile);
-  useEffect(() => { profileRef.current = profile; }, [profile]);
-
-  // Init : redirection si non connecté + chargement des données
-  // NE PAS mettre profile ni router dans les deps — ils sont accédés via ref
+  /* ── Redirection admin + chargement unique ────────────── */
   useEffect(() => {
     mountedRef.current = true;
-    if (!user) { routerRef.current.push('/'); return; }
-    load();
+
+    // Les admins n'ont pas d'espace profil client
+    if (isAdmin) { router.push('/admin'); return; }
+    if (!user)   { router.push('/'); return; }
+
+    // Evite un double chargement en StrictMode ou hot-reload
+    if (dataLoadedRef.current) return;
+    dataLoadedRef.current = true;
+
+    const uid = user.id;
+    Promise.all([
+      getUserOrders(uid),
+      isPushSupported() ? isSubscribed() : Promise.resolve(false),
+    ]).then(([ords, sub]) => {
+      if (!mountedRef.current) return;
+      setOrders(ords);
+      setPushOn(sub);
+    }).catch(console.error)
+      .finally(() => { if (mountedRef.current) setLoading(false); });
+
     return () => { mountedRef.current = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, load]);
+  }, []); // [] : run once — user/profile/router accessibles via closure snapshot
 
-  // Initialiser les champs d'édition uniquement quand profile change
-  // (séparé pour ne pas re-déclencher le chargement des commandes)
+  /* ── Sync champs édition quand le profil change ───────── */
   useEffect(() => {
-    if (!profile && !user) return;
-    const displayName = (profile as any)?.display_name ?? user?.email?.split('@')[0] ?? '';
-    const avatarUrl   = (profile as any)?.avatar_url ?? '';
-    setEditName(displayName);
-    setEditAvatar(avatarUrl);
-  }, [(profile as any)?.display_name, (profile as any)?.avatar_url, user?.email]);
+    if (!user) return;
+    setEditName((profile as any)?.display_name ?? user.email?.split('@')[0] ?? '');
+    setEditAvatar((profile as any)?.avatar_url ?? '');
+  // On ne surveille que les valeurs scalaires, pas les objets entiers
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(profile as any)?.display_name, (profile as any)?.avatar_url]);
 
-  /* ── Sauvegarde profil ── */
+  /* ── Recharge la liste des commandes (après annulation) ── */
+  const reloadOrders = () => {
+    if (!user) return;
+    getUserOrders(user.id)
+      .then(ords => { if (mountedRef.current) setOrders(ords); })
+      .catch(console.error);
+  };
+
+  /* ── Sauvegarde profil ────────────────────────────────── */
   const handleSaveProfile = async () => {
     if (!user) return;
     setSaving(true);
@@ -145,50 +125,40 @@ export default function ProfilePage() {
       await refreshProfile();
       toast.success('Profil mis à jour !');
       setEditMode(false);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (err: any) { toast.error(err.message); }
+    finally { setSaving(false); }
   };
 
-  /* ── Toggle push ── */
+  /* ── Toggle push ──────────────────────────────────────── */
   const handlePushToggle = async () => {
     if (!user) return;
     setPushL(true);
     try {
       if (pushOn) {
-        await unsubscribeFromPush(user.id);
-        setPushOn(false);
+        await unsubscribeFromPush(user.id); setPushOn(false);
         toast.info('Notifications désactivées');
       } else {
-        const ok = await subscribeToPush(user.id);
-        setPushOn(ok);
+        const ok = await subscribeToPush(user.id); setPushOn(ok);
         if (ok) toast.success('Notifications activées !');
-        else toast.warning('Permission refusée par le navigateur');
+        else    toast.warning('Permission refusée par le navigateur');
       }
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setPushL(false);
-    }
+    } catch (e: any) { toast.error(e.message); }
+    finally { setPushL(false); }
   };
 
-  /* ── Annulation ── */
+  /* ── Annulation commande ──────────────────────────────── */
   const handleCancel = async (orderId: string) => {
     if (!window.confirm('Annuler cette commande ? Cette action est irréversible.')) return;
     setCancelling(orderId);
     try {
       await cancelOrder(orderId, false);
       toast.success('Commande annulée.');
-      load();
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setCancelling(null);
-    }
+      reloadOrders();
+    } catch (err: any) { toast.error(err.message); }
+    finally { setCancelling(null); }
   };
 
+  /* ── Render ───────────────────────────────────────────── */
   if (loading) return (
     <div className="flex justify-center items-center min-h-[60vh]">
       <Loader2 className="animate-spin text-uvci-purple" size={36} />
@@ -200,7 +170,6 @@ export default function ProfilePage() {
   const email       = user?.email ?? '';
   const balance     = (profile as any)?.balance_points ?? 0;
 
-  /* stats rapides */
   const totalOrders     = orders.length;
   const completedOrders = orders.filter(o => ['completed', 'delivered'].includes(o.status)).length;
   const totalSpent      = orders
@@ -210,7 +179,7 @@ export default function ProfilePage() {
   return (
     <div className="container mx-auto px-4 pb-24 pt-6 max-w-xl">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => router.push('/')}
           className="p-2 bg-white rounded-xl shadow-sm border border-gray-100 text-gray-500 hover:text-uvci-purple transition">
@@ -219,12 +188,10 @@ export default function ProfilePage() {
         <h1 className="text-2xl font-extrabold text-gray-800">Mon Profil</h1>
       </div>
 
-      {/* ── Hero card ── */}
+      {/* Hero card */}
       <div className="relative bg-gradient-to-br from-uvci-purple via-[#9b37af] to-uvci-green rounded-3xl p-6 mb-5 overflow-hidden shadow-xl">
-        {/* déco */}
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full" />
         <div className="absolute -bottom-6 -left-6 w-28 h-28 bg-white/10 rounded-full" />
-
         <div className="relative flex items-center gap-4">
           <div className="relative flex-shrink-0">
             <Avatar name={displayName} avatarUrl={avatarUrl} size="lg" />
@@ -242,13 +209,11 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
-
-        {/* stats */}
         <div className="relative grid grid-cols-3 gap-2 mt-5">
           {[
-            { label: 'Commandes', value: totalOrders },
+            { label: 'Commandes',  value: totalOrders },
             { label: 'Complétées', value: completedOrders },
-            { label: 'Dépensé', value: `${totalSpent.toLocaleString()} F` },
+            { label: 'Dépensé',    value: `${totalSpent.toLocaleString()} F` },
           ].map(s => (
             <div key={s.label} className="bg-white/15 rounded-2xl p-3 text-center">
               <p className="text-white font-black text-lg leading-none">{s.value}</p>
@@ -258,12 +223,12 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* Tabs */}
       <div className="flex bg-gray-100 rounded-2xl p-1 mb-5">
         {([
-          { id: 'profil', label: 'Profil', icon: User },
-          { id: 'commandes', label: 'Commandes', icon: ShoppingBag },
-          { id: 'notifications', label: 'Notifs', icon: Bell },
+          { id: 'profil',        label: 'Profil',     icon: User },
+          { id: 'commandes',     label: 'Commandes',  icon: ShoppingBag },
+          { id: 'notifications', label: 'Notifs',     icon: Bell },
         ] as { id: Tab; label: string; icon: React.ElementType }[]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -274,7 +239,7 @@ export default function ProfilePage() {
         ))}
       </div>
 
-      {/* ══ TAB : PROFIL ══════════════════════════════════ */}
+      {/* ── TAB PROFIL ── */}
       {tab === 'profil' && (
         <Card3D className="p-5">
           <div className="flex items-center justify-between mb-4">
@@ -282,8 +247,7 @@ export default function ProfilePage() {
               <Settings size={17} className="text-uvci-purple" /> Informations
             </h2>
             {!editMode && (
-              <button onClick={() => setEditMode(true)}
-                className="text-xs font-bold text-uvci-purple hover:underline">
+              <button onClick={() => setEditMode(true)} className="text-xs font-bold text-uvci-purple hover:underline">
                 Modifier
               </button>
             )}
@@ -293,49 +257,39 @@ export default function ProfilePage() {
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Nom d'affichage</label>
-                <input
-                  value={editName}
-                  onChange={e => setEditName(e.target.value)}
-                  maxLength={40}
+                <input value={editName} onChange={e => setEditName(e.target.value)} maxLength={40}
                   placeholder="Votre prénom"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none text-sm font-medium"
-                />
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none text-sm font-medium" />
               </div>
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">URL de l'avatar</label>
-                <input
-                  value={editAvatar}
-                  onChange={e => setEditAvatar(e.target.value)}
+                <input value={editAvatar} onChange={e => setEditAvatar(e.target.value)}
                   placeholder="https://... (optionnel)"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none text-sm font-medium"
-                />
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none text-sm font-medium" />
                 {editAvatar && (
                   <div className="mt-2 flex items-center gap-3">
-                    <img src={editAvatar} alt="prévisualisation"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    <img src={editAvatar} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       className="w-12 h-12 rounded-xl object-cover border border-gray-200" />
                     <p className="text-xs text-gray-400">Prévisualisation</p>
                   </div>
                 )}
               </div>
               <div className="flex gap-3">
-                <button onClick={() => { setEditMode(false); }}
+                <button onClick={() => setEditMode(false)}
                   className="flex-1 py-3 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition text-sm">
                   Annuler
                 </button>
                 <button onClick={handleSaveProfile} disabled={saving || !editName.trim()}
                   className="flex-1 py-3 bg-uvci-purple text-white rounded-xl font-bold hover:bg-uvci-purple/90 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50">
-                  {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                  Enregistrer
+                  {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Enregistrer
                 </button>
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-1">
               {[
-                { label: 'Nom', value: displayName },
-                { label: 'Email', value: email },
-                { label: 'Rôle', value: (profile as any)?.role === 'admin' ? '🔐 Administrateur' : '🎓 Étudiant' },
+                { label: 'Nom',             value: displayName },
+                { label: 'Email',           value: email },
                 { label: 'Points fidélité', value: `${balance} pts` },
               ].map(row => (
                 <div key={row.label} className="flex justify-between items-center py-2.5 border-b border-gray-50 last:border-0">
@@ -346,17 +300,14 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {/* Section sécurité */}
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <Shield size={13} />
-              <span>Authentification sécurisée via Google UVCI</span>
-            </div>
+          <div className="mt-5 pt-4 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-400">
+            <Shield size={13} />
+            <span>Authentification sécurisée via Google UVCI</span>
           </div>
         </Card3D>
       )}
 
-      {/* ══ TAB : COMMANDES ══════════════════════════════ */}
+      {/* ── TAB COMMANDES ── */}
       {tab === 'commandes' && (
         <div className="space-y-3">
           {orders.length === 0 ? (
@@ -369,60 +320,41 @@ export default function ProfilePage() {
               </button>
             </div>
           ) : orders.map(order => (
-            <div key={order.id}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition-shadow">
+            <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="font-mono text-xs text-gray-400 mb-0.5">
-                    #{order.id.slice(0, 8).toUpperCase()}
-                  </p>
+                  <p className="font-mono text-xs text-gray-400 mb-0.5">#{order.id.slice(0, 8).toUpperCase()}</p>
                   <p className="text-xs text-gray-400">
-                    {new Date(order.created_at).toLocaleString('fr-FR', {
-                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                    })}
+                    {new Date(order.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </div>
                 <MiniStatusBadge status={order.status} />
               </div>
 
-              {/* Articles résumés */}
               {order.order_items && order.order_items.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-3">
                   {order.order_items.slice(0, 3).map((item, i) => (
-                    <span key={item.id ?? i}
-                      className="text-xs bg-gray-100 text-gray-700 font-medium px-2 py-1 rounded-lg">
+                    <span key={item.id ?? i} className="text-xs bg-gray-100 text-gray-700 font-medium px-2 py-1 rounded-lg">
                       {item.quantity}× {item.menu_items?.name ?? 'Plat'}
                     </span>
                   ))}
                   {order.order_items.length > 3 && (
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">
-                      +{order.order_items.length - 3}
-                    </span>
+                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">+{order.order_items.length - 3}</span>
                   )}
                 </div>
               )}
 
               <div className="flex items-center justify-between">
-                <span className="font-extrabold text-uvci-purple text-sm">
-                  {order.total_price.toLocaleString()} FCFA
-                </span>
+                <span className="font-extrabold text-uvci-purple text-sm">{order.total_price.toLocaleString()} FCFA</span>
                 <div className="flex items-center gap-2">
-                  {/* Bouton annulation */}
                   {CANCELLABLE.has(order.status) && (
-                    <button
-                      onClick={() => handleCancel(order.id)}
-                      disabled={cancelling === order.id}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-red-50 border border-red-200 text-red-500 font-bold rounded-xl text-xs hover:bg-red-100 transition disabled:opacity-50"
-                    >
-                      {cancelling === order.id
-                        ? <Loader2 size={12} className="animate-spin" />
-                        : <XCircle size={12} />}
+                    <button onClick={() => handleCancel(order.id)} disabled={cancelling === order.id}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-red-50 border border-red-200 text-red-500 font-bold rounded-xl text-xs hover:bg-red-100 transition disabled:opacity-50">
+                      {cancelling === order.id ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
                       Annuler
                     </button>
                   )}
-                  {/* Lien vers page commandes complète */}
-                  <button onClick={() => router.push('/orders')}
-                    className="p-1.5 text-gray-400 hover:text-uvci-purple transition">
+                  <button onClick={() => router.push('/orders')} className="p-1.5 text-gray-400 hover:text-uvci-purple transition">
                     <ChevronRight size={16} />
                   </button>
                 </div>
@@ -439,13 +371,12 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* ══ TAB : NOTIFICATIONS ══════════════════════════ */}
+      {/* ── TAB NOTIFICATIONS ── */}
       {tab === 'notifications' && (
         <Card3D className="p-5">
           <h2 className="font-extrabold text-gray-800 flex items-center gap-2 mb-5">
             <Bell size={17} className="text-uvci-purple" /> Notifications push
           </h2>
-
           {!isPushSupported() ? (
             <div className="text-center py-8">
               <BellOff size={32} className="mx-auto text-gray-300 mb-3" />
@@ -457,38 +388,20 @@ export default function ProfilePage() {
                 <div className="flex-1">
                   <p className="font-bold text-gray-800 text-sm">Alertes commandes</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {pushOn
-                      ? 'Vous recevrez une notification quand votre commande est prête.'
-                      : 'Activez pour être alerté dès que votre commande est prête à retirer.'}
+                    {pushOn ? 'Vous serez alerté dès que votre commande est prête.' : 'Activez pour recevoir une alerte quand votre commande est prête.'}
                   </p>
                 </div>
-                <button
-                  onClick={handlePushToggle}
-                  disabled={pushLoading}
-                  className={`relative w-12 h-6 rounded-full transition-all flex-shrink-0 ml-4 ${pushOn ? 'bg-uvci-green' : 'bg-gray-300'}`}
-                >
+                <button onClick={handlePushToggle} disabled={pushLoading}
+                  className={`relative w-12 h-6 rounded-full transition-all flex-shrink-0 ml-4 ${pushOn ? 'bg-uvci-green' : 'bg-gray-300'}`}>
                   {pushLoading
                     ? <Loader2 size={12} className="animate-spin absolute inset-0 m-auto text-white" />
                     : <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${pushOn ? 'left-6' : 'left-0.5'}`} />
                   }
                 </button>
               </div>
-
-              <div className={`flex items-center gap-3 p-3 rounded-xl border text-sm ${
-                pushOn
-                  ? 'bg-green-50 border-green-200 text-green-700'
-                  : 'bg-gray-50 border-gray-200 text-gray-500'
-              }`}>
-                {pushOn
-                  ? <><CheckCircle size={16} className="flex-shrink-0" /> Notifications activées</>
-                  : <><BellOff size={16} className="flex-shrink-0" /> Notifications désactivées</>
-                }
+              <div className={`flex items-center gap-3 p-3 rounded-xl border text-sm ${pushOn ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                {pushOn ? <><CheckCircle size={16} className="flex-shrink-0" /> Notifications activées</> : <><BellOff size={16} className="flex-shrink-0" /> Notifications désactivées</>}
               </div>
-
-              <p className="text-xs text-gray-400 mt-4 leading-relaxed">
-                Les notifications sont envoyées uniquement lors des changements de statut de vos commandes.
-                Vous pouvez les désactiver à tout moment.
-              </p>
             </>
           )}
         </Card3D>
