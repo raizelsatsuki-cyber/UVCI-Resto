@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-/* ── Helpers statut ─────────────────────────────────────── */
 const STATUS_CFG: Record<string, { label: string; dot: string }> = {
   pending_payment: { label: 'Attente paiement', dot: 'bg-yellow-400' },
   pending:         { label: 'En attente',        dot: 'bg-orange-400' },
@@ -24,7 +23,6 @@ const STATUS_CFG: Record<string, { label: string; dot: string }> = {
   delivered:       { label: 'Livrée',            dot: 'bg-gray-400' },
   cancelled:       { label: 'Annulée',           dot: 'bg-red-400' },
 };
-
 const CANCELLABLE = new Set(['pending', 'pending_payment']);
 
 function MiniStatusBadge({ status }: { status: string }) {
@@ -51,35 +49,46 @@ function Avatar({ name, avatarUrl, size = 'lg' }: { name: string; avatarUrl?: st
 type Tab = 'profil' | 'commandes' | 'notifications';
 
 export default function ProfilePage() {
-  const { user, profile, refreshProfile, isAdmin } = useAuth();
+  // ── Auth ──────────────────────────────────────────────
+  // `loading` = AuthContext n'a pas encore résolu l'état de session
+  const { user, profile, refreshProfile, isAdmin, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [tab, setTab]             = useState<Tab>('profil');
-  const [loading, setLoading]     = useState(true);
-  const [orders, setOrders]       = useState<Order[]>([]);
-  const [pushOn, setPushOn]       = useState(false);
-  const [pushLoading, setPushL]   = useState(false);
-  const [editName, setEditName]   = useState('');
+  // ── State local ───────────────────────────────────────
+  const [tab, setTab]               = useState<Tab>('profil');
+  const [dataLoading, setDataLoading] = useState(true);
+  const [orders, setOrders]         = useState<Order[]>([]);
+  const [pushOn, setPushOn]         = useState(false);
+  const [pushLoading, setPushL]     = useState(false);
+  const [editName, setEditName]     = useState('');
   const [editAvatar, setEditAvatar] = useState('');
-  const [saving, setSaving]       = useState(false);
-  const [editMode, setEditMode]   = useState(false);
+  const [saving, setSaving]         = useState(false);
+  const [editMode, setEditMode]     = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
-  // Refs stables — ne déclenchent jamais de re-render ni de boucle
-  const mountedRef    = useRef(true);
-  const dataLoadedRef = useRef(false); // garde-fou : ne charger qu'une seule fois
+  const mountedRef  = useRef(true);
+  const loadedRef   = useRef(false); // évite double chargement
 
-  /* ── Redirection admin + chargement unique ────────────── */
+  // ── Étape 1 : attendre la résolution de l'auth ────────
+  // Tant que authLoading est true, on ne sait pas encore si l'user est
+  // connecté ou admin — on affiche juste le spinner.
+  // Dès que authLoading passe à false, on décide quoi faire.
   useEffect(() => {
+    if (authLoading) return;          // pas encore prêt → patience
+
+    if (!user) {
+      router.push('/');               // non connecté → accueil
+      return;
+    }
+    if (isAdmin) {
+      router.push('/admin');          // admin → dashboard
+      return;
+    }
+
+    // Client connecté — charger les données une seule fois
+    if (loadedRef.current) return;
+    loadedRef.current = true;
     mountedRef.current = true;
-
-    // Les admins n'ont pas d'espace profil client
-    if (isAdmin) { router.push('/admin'); return; }
-    if (!user)   { router.push('/'); return; }
-
-    // Evite un double chargement en StrictMode ou hot-reload
-    if (dataLoadedRef.current) return;
-    dataLoadedRef.current = true;
 
     const uid = user.id;
     Promise.all([
@@ -90,22 +99,22 @@ export default function ProfilePage() {
       setOrders(ords);
       setPushOn(sub);
     }).catch(console.error)
-      .finally(() => { if (mountedRef.current) setLoading(false); });
+      .finally(() => { if (mountedRef.current) setDataLoading(false); });
 
     return () => { mountedRef.current = false; };
+  // authLoading, isAdmin et user.id sont les seuls déclencheurs légitimes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // [] : run once — user/profile/router accessibles via closure snapshot
+  }, [authLoading, isAdmin, user?.id]);
 
-  /* ── Sync champs édition quand le profil change ───────── */
+  // ── Étape 2 : sync champs édition quand le profil est dispo ──
   useEffect(() => {
-    if (!user) return;
-    setEditName((profile as any)?.display_name ?? user.email?.split('@')[0] ?? '');
+    if (!profile && !user) return;
+    setEditName((profile as any)?.display_name ?? user?.email?.split('@')[0] ?? '');
     setEditAvatar((profile as any)?.avatar_url ?? '');
-  // On ne surveille que les valeurs scalaires, pas les objets entiers
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(profile as any)?.display_name, (profile as any)?.avatar_url]);
 
-  /* ── Recharge la liste des commandes (après annulation) ── */
+  // ── Recharge commandes (après annulation) ─────────────
   const reloadOrders = () => {
     if (!user) return;
     getUserOrders(user.id)
@@ -113,7 +122,7 @@ export default function ProfilePage() {
       .catch(console.error);
   };
 
-  /* ── Sauvegarde profil ────────────────────────────────── */
+  // ── Actions ───────────────────────────────────────────
   const handleSaveProfile = async () => {
     if (!user) return;
     setSaving(true);
@@ -129,7 +138,6 @@ export default function ProfilePage() {
     finally { setSaving(false); }
   };
 
-  /* ── Toggle push ──────────────────────────────────────── */
   const handlePushToggle = async () => {
     if (!user) return;
     setPushL(true);
@@ -146,7 +154,6 @@ export default function ProfilePage() {
     finally { setPushL(false); }
   };
 
-  /* ── Annulation commande ──────────────────────────────── */
   const handleCancel = async (orderId: string) => {
     if (!window.confirm('Annuler cette commande ? Cette action est irréversible.')) return;
     setCancelling(orderId);
@@ -158,8 +165,9 @@ export default function ProfilePage() {
     finally { setCancelling(null); }
   };
 
-  /* ── Render ───────────────────────────────────────────── */
-  if (loading) return (
+  // ── Render ────────────────────────────────────────────
+  // Spinner unifié : auth pas prête OU données en cours de chargement
+  if (authLoading || dataLoading) return (
     <div className="flex justify-center items-center min-h-[60vh]">
       <Loader2 className="animate-spin text-uvci-purple" size={36} />
     </div>
@@ -226,9 +234,9 @@ export default function ProfilePage() {
       {/* Tabs */}
       <div className="flex bg-gray-100 rounded-2xl p-1 mb-5">
         {([
-          { id: 'profil',        label: 'Profil',     icon: User },
-          { id: 'commandes',     label: 'Commandes',  icon: ShoppingBag },
-          { id: 'notifications', label: 'Notifs',     icon: Bell },
+          { id: 'profil',        label: 'Profil',    icon: User },
+          { id: 'commandes',     label: 'Commandes', icon: ShoppingBag },
+          { id: 'notifications', label: 'Notifs',    icon: Bell },
         ] as { id: Tab; label: string; icon: React.ElementType }[]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -400,7 +408,10 @@ export default function ProfilePage() {
                 </button>
               </div>
               <div className={`flex items-center gap-3 p-3 rounded-xl border text-sm ${pushOn ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
-                {pushOn ? <><CheckCircle size={16} className="flex-shrink-0" /> Notifications activées</> : <><BellOff size={16} className="flex-shrink-0" /> Notifications désactivées</>}
+                {pushOn
+                  ? <><CheckCircle size={16} className="flex-shrink-0" /> Notifications activées</>
+                  : <><BellOff size={16} className="flex-shrink-0" /> Notifications désactivées</>
+                }
               </div>
             </>
           )}
