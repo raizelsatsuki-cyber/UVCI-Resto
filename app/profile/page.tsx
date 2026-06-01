@@ -87,11 +87,13 @@ export default function ProfilePage() {
 
   const mountedRef = useRef(true);
 
+  const userId = user?.id ?? null;
+
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!userId) return;
     try {
       const [ords, sub] = await Promise.all([
-        getUserOrders(user.id),
+        getUserOrders(userId),
         isPushSupported() ? isSubscribed() : Promise.resolve(false),
       ]);
       if (mountedRef.current) {
@@ -101,18 +103,35 @@ export default function ProfilePage() {
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
+  // Ref stable pour router (évite de l'ajouter aux deps)
+  const routerRef = useRef(router);
+  useEffect(() => { routerRef.current = router; }, [router]);
+
+  // Ref stable pour profile (évite la boucle)
+  const profileRef = useRef(profile);
+  useEffect(() => { profileRef.current = profile; }, [profile]);
+
+  // Init : redirection si non connecté + chargement des données
+  // NE PAS mettre profile ni router dans les deps — ils sont accédés via ref
   useEffect(() => {
     mountedRef.current = true;
-    if (!user) { router.push('/'); return; }
-    const displayName = (profile as any)?.display_name ?? user.email?.split('@')[0] ?? '';
+    if (!user) { routerRef.current.push('/'); return; }
+    load();
+    return () => { mountedRef.current = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, load]);
+
+  // Initialiser les champs d'édition uniquement quand profile change
+  // (séparé pour ne pas re-déclencher le chargement des commandes)
+  useEffect(() => {
+    if (!profile && !user) return;
+    const displayName = (profile as any)?.display_name ?? user?.email?.split('@')[0] ?? '';
     const avatarUrl   = (profile as any)?.avatar_url ?? '';
     setEditName(displayName);
     setEditAvatar(avatarUrl);
-    load();
-    return () => { mountedRef.current = false; };
-  }, [user, profile, load, router]);
+  }, [(profile as any)?.display_name, (profile as any)?.avatar_url, user?.email]);
 
   /* ── Sauvegarde profil ── */
   const handleSaveProfile = async () => {
