@@ -22,6 +22,8 @@ export interface Database {
           email: string;
           role: UserRole;
           balance_points: number;
+          display_name: string | null;
+          avatar_url: string | null;
           created_at: string;
         };
         Insert: {
@@ -29,12 +31,16 @@ export interface Database {
           email: string;
           role?: UserRole;
           balance_points?: number;
+          display_name?: string | null;
+          avatar_url?: string | null;
           created_at?: string;
         };
         Update: {
           email?: string;
           role?: UserRole;
           balance_points?: number;
+          display_name?: string | null;
+          avatar_url?: string | null;
         };
         Relationships: [];
       };

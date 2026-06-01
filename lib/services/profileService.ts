@@ -40,3 +40,15 @@ export async function ensureProfile(userId: string, email: string): Promise<Prof
   if (error) throw new Error(error.message);
   return data as Profile;
 }
+
+/** Met à jour le nom d'affichage et/ou l'URL d'avatar d'un profil */
+export async function updateProfile(
+  userId: string,
+  updates: { display_name?: string; avatar_url?: string }
+): Promise<void> {
+  const { error } = await (supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId) as any);
+  if (error) throw new Error(error.message);
+}

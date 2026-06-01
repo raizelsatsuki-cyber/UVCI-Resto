@@ -7,12 +7,12 @@ import { Order, OrderStatus, MenuItem, MealOption } from '../../../types/index';
 import { useAuth } from '../../../context/AuthContext';
 import { useRouter } from '../../../lib/routerContext';
 import { signOut } from '../../../lib/services/authService';
-import { getAllOrders, updateOrderStatus, subscribeToAllOrders } from '../../../lib/services/orderService';
+import { getAllOrders, updateOrderStatus, subscribeToAllOrders, cancelOrder } from '../../../lib/services/orderService';
 import { getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem } from '../../../lib/services/menuService';
 import { supabase } from '../../../lib/supabaseClient';
 import { toast } from 'react-toastify';
 import {
-  TrendingUp, Clock, CheckCircle, Package, ChefHat, Loader2, RefreshCw,
+  TrendingUp, Clock, CheckCircle, Package, ChefHat, Loader2, RefreshCw, XCircle,
   Hash, Utensils, Plus, Edit2, Trash2, ImageIcon, Save, X, ToggleLeft, ToggleRight,
   ListPlus, CheckSquare, Square, LogOut, ChevronDown, ChevronUp, BellRing, ShieldAlert
 } from 'lucide-react';
@@ -20,9 +20,25 @@ import {
 const CATEGORIES = ['Petit-déjeuner', 'Entrée', 'Plat', 'Dessert', 'Boisson'];
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-orange-100 text-orange-700 border-orange-200',
-  ready:   'bg-blue-100 text-blue-700 border-blue-200',
-  delivered: 'bg-gray-100 text-gray-500 border-gray-200',
+  pending_payment: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  pending:         'bg-orange-100 text-orange-700 border-orange-200',
+  paid:            'bg-green-100 text-green-700 border-green-200',
+  preparing:       'bg-orange-100 text-orange-700 border-orange-200',
+  ready:           'bg-blue-100 text-blue-700 border-blue-200',
+  completed:       'bg-gray-100 text-gray-500 border-gray-200',
+  delivered:       'bg-gray-100 text-gray-500 border-gray-200',
+  cancelled:       'bg-red-100 text-red-500 border-red-200',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending_payment: 'Attente paiement',
+  pending:         'En attente',
+  paid:            'Payée',
+  preparing:       'En préparation',
+  ready:           'Prête',
+  completed:       'Récupérée',
+  delivered:       'Livrée',
+  cancelled:       'Annulée',
 };
 
 function emptyItem() {
@@ -306,7 +322,7 @@ export default function AdminDashboard() {
                         <td className="p-4 font-bold">{order.total_price.toLocaleString()} F</td>
                         <td className="p-4">
                           <span className={`px-2 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[order.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                            {order.status === 'pending' ? 'En attente' : order.status === 'ready' ? 'Prête' : 'Livrée'}
+                            {STATUS_LABELS[order.status] ?? order.status}
                           </span>
                         </td>
                         <td className="p-4 text-right space-x-2">
@@ -318,6 +334,18 @@ export default function AdminDashboard() {
                           {order.status === 'ready' && (
                             <Button3D variant="secondary" onClick={() => handleStatusChange(order.id, 'delivered')} className="py-1 px-3 text-xs">
                               <CheckCircle size={12} className="mr-1 inline" /> Livré
+                            </Button3D>
+                          )}
+                          {!['completed', 'delivered', 'cancelled'].includes(order.status) && (
+                            <Button3D variant="danger" onClick={async () => {
+                              if (!window.confirm('Annuler cette commande ?')) return;
+                              try {
+                                await cancelOrder(order.id, true);
+                                toast.success('Commande annulée.');
+                                fetchOrders();
+                              } catch (err: any) { toast.error(err.message); }
+                            }} className="py-1 px-3 text-xs">
+                              <XCircle size={12} className="mr-1 inline" /> Annuler
                             </Button3D>
                           )}
                         </td>

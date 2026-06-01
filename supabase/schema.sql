@@ -22,6 +22,8 @@ create table if not exists profiles (
   email          text        not null,
   role           user_role   not null default 'student',
   balance_points integer     not null default 0 check (balance_points >= 0),
+  display_name   text,
+  avatar_url     text,
   created_at     timestamptz not null default now()
 );
 

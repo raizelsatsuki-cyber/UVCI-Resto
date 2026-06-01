@@ -1,5 +1,5 @@
 import { supabase } from '../supabaseClient';
-import { decrementStock } from './menuService';
+import { decrementStock, restoreStock } from './menuService';
 import type { Order, CartItem } from '../../types/index';
 
 export async function getAllOrders(): Promise<Order[]> {
@@ -127,4 +127,49 @@ export function subscribeToUserOrders(userId: string, onUpdate: () => void) {
       onUpdate
     )
     .subscribe();
+}
+
+/**
+ * Annule une commande.
+ * - Utilisateur : seulement si statut = 'pending' (règle métier validée)
+ * - Admin : tout statut sauf 'completed' et 'delivered'
+ * Le stock est restitué via restaureStock dans menuService.
+ */
+export async function cancelOrder(
+  orderId: string,
+  isAdmin: boolean = false
+): Promise<void> {
+  const { data: order, error: fetchError } = await (supabase
+    .from('orders')
+    .select('status, order_items(menu_item_id, quantity)')
+    .eq('id', orderId)
+    .single() as any);
+
+  if (fetchError || !order) throw new Error('Commande introuvable');
+
+  const cancellableByUser  = ['pending', 'pending_payment'];
+  const cancellableByAdmin = ['pending', 'pending_payment', 'paid', 'preparing', 'ready'];
+
+  const allowed = isAdmin ? cancellableByAdmin : cancellableByUser;
+  if (!allowed.includes((order as any).status)) {
+    throw new Error(
+      isAdmin
+        ? 'Cette commande ne peut plus être annulée.'
+        : 'Vous ne pouvez annuler une commande qu\'avant sa préparation.'
+    );
+  }
+
+  const { error } = await (supabase
+    .from('orders')
+    .update({ status: 'cancelled' })
+    .eq('id', orderId) as any);
+  if (error) throw new Error(error.message);
+
+  // Restituer le stock pour chaque article
+  const items = (order as any).order_items ?? [];
+  await Promise.allSettled(
+    items.map((item: { menu_item_id: string; quantity: number }) =>
+      restoreStock(item.menu_item_id, item.quantity)
+    )
+  );
 }
