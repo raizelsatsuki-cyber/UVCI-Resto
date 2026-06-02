@@ -105,14 +105,11 @@ export async function decrementStock(menuItemId: string, quantity: number): Prom
     .eq('id', menuItemId) as any);
 }
 
-/** Restitue du stock après annulation d'une commande */
+/** Restitue le stock via RPC SECURITY DEFINER après annulation */
 export async function restoreStock(menuItemId: string, quantity: number): Promise<void> {
-  const { data } = await (supabase
-    .from('menu_items').select('stock_quantity').eq('id', menuItemId).single() as any);
-  if (!data) return;
-  const newStock = (data as any).stock_quantity + quantity;
-  await (supabase
-    .from('menu_items')
-    .update({ stock_quantity: newStock, is_available: newStock > 0 })
-    .eq('id', menuItemId) as any);
+  const { error } = await (supabase.rpc('restore_stock', {
+    p_menu_item_id: menuItemId,
+    p_quantity: quantity,
+  }) as any);
+  if (error) console.error('restoreStock:', error.message);
 }

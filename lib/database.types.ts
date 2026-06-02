@@ -229,6 +229,14 @@ export interface Database {
         Args: { p_user_id: string; p_points: number; p_description: string };
         Returns: Json;
       };
+      decrement_stock: {
+        Args: { p_menu_item_id: string; p_quantity: number };
+        Returns: void;
+      };
+      restore_stock: {
+        Args: { p_menu_item_id: string; p_quantity: number };
+        Returns: void;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
