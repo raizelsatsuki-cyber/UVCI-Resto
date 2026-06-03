@@ -1,7 +1,4 @@
-import React, {
-  createContext, useContext, useState,
-  useEffect, useCallback, useRef,
-} from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { User as SupabaseUser, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
 import { getProfile, ensureProfile } from '../lib/services/profileService';
@@ -23,93 +20,87 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser]           = useState<SupabaseUser | null>(null);
-  const [profile, setProfile]     = useState<Profile | null>(null);
-  const [session, setSession]     = useState<Session | null>(null);
-  const [loading, setLoading]     = useState(true);
+  const [user, setUser]       = useState<SupabaseUser | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
   const [unauthorized, setUnauth] = useState(false);
 
-  const mountedRef        = useRef(true);
-  const profileLoadingRef = useRef(false);
-  const loadingDoneRef    = useRef(false); // ← garantit que setLoading(false) n'est appelé qu'une fois
+  const mountedRef = useRef(true);
 
-  const signOutRef = useRef(async () => { await supabase.auth.signOut(); });
-
-  /** Toujours appeler via stopLoading() — jamais setLoading(false) directement */
-  const stopLoading = useCallback(() => {
-    if (loadingDoneRef.current) return;
-    loadingDoneRef.current = true;
-    if (mountedRef.current) setLoading(false);
-  }, []);
-
-  const loadProfile = useCallback(async (authUser: SupabaseUser) => {
-    if (profileLoadingRef.current) return;
-    profileLoadingRef.current = true;
+  // ── Chargement du profil ─────────────────────────────────────
+  // Pas de ref "profileLoading" : si deux appels arrivent en même temps,
+  // le deuxième écrase le premier — c'est acceptable et évite les deadlocks.
+  const loadProfile = useCallback(async (authUser: SupabaseUser): Promise<void> => {
+    if (!isUVCIEmail(authUser.email)) {
+      if (mountedRef.current) { setUnauth(true); setProfile(null); }
+      await supabase.auth.signOut();
+      return;
+    }
+    if (mountedRef.current) setUnauth(false);
     try {
-      if (!isUVCIEmail(authUser.email)) {
-        if (mountedRef.current) setUnauth(true);
-        await signOutRef.current();
-        return;
-      }
-      if (mountedRef.current) setUnauth(false);
       let p = await getProfile(authUser.id);
       if (!p) p = await ensureProfile(authUser.id, authUser.email ?? '');
       if (mountedRef.current) setProfile(p);
     } catch (err) {
-      console.error('Erreur chargement profil:', err);
-    } finally {
-      profileLoadingRef.current = false;
+      console.error('loadProfile error:', err);
+      // Ne pas bloquer : on laisse l'UI se rendre même sans profil
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    if (user) await loadProfile(user);
+    if (!user) return;
+    await loadProfile(user);
   }, [user, loadProfile]);
 
+  // ── Abonnement auth ──────────────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;
+    let resolved = false; // garantit setLoading(false) exactement une fois par montage
+
+    const resolve = () => {
+      if (!resolved && mountedRef.current) {
+        resolved = true;
+        setLoading(false);
+      }
+    };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, s: Session | null) => {
         if (!mountedRef.current) return;
 
-        // TOKEN_REFRESHED ne change pas l'état de l'utilisateur
-        // mais on doit quand même stopper le loading si c'est le 1er event
-        if (event === 'TOKEN_REFRESHED') {
-          stopLoading(); // ← FIX PRINCIPAL : était "return" sans stopLoading()
-          return;
-        }
+        // TOKEN_REFRESHED : session rafraîchie en arrière-plan, rien à changer
+        if (event === 'TOKEN_REFRESHED') { resolve(); return; }
 
-        try {
-          setSession(s);
-          setUser(s?.user ?? null);
+        setSession(s);
+        setUser(s?.user ?? null);
 
-          if (s?.user) {
-            await loadProfile(s.user);
-          } else {
+        if (s?.user) {
+          await loadProfile(s.user);
+        } else {
+          if (mountedRef.current) {
             setProfile(null);
             if (event === 'SIGNED_OUT') setUnauth(false);
           }
-        } catch (err) {
-          console.error('onAuthStateChange error:', err);
-        } finally {
-          stopLoading(); // ← toujours appelé, quoi qu'il arrive
         }
+
+        resolve(); // débloque le loading après le premier event traité
       }
     );
 
-    // Timeout de sécurité réduit à 2s (était 4s)
+    // Filet de sécurité : si Supabase ne répond pas en 3s on débloque quand même
     const timeout = setTimeout(() => {
       console.warn('Auth timeout — forçage loading=false');
-      stopLoading();
-    }, 2000);
+      resolve();
+    }, 3000);
 
     return () => {
       mountedRef.current = false;
       subscription.unsubscribe();
       clearTimeout(timeout);
+      resolved = true; // empêche resolve() après démontage
     };
-  }, [loadProfile, stopLoading]);
+  }, [loadProfile]);
 
   return (
     <AuthContext.Provider value={{
