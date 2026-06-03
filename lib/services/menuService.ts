@@ -94,15 +94,13 @@ export async function deleteMenuItem(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/** Décrémente le stock via RPC SECURITY DEFINER (pas d'UPDATE direct client → 403) */
 export async function decrementStock(menuItemId: string, quantity: number): Promise<void> {
-  const { data } = await (supabase
-    .from('menu_items').select('stock_quantity').eq('id', menuItemId).single() as any);
-  if (!data) return;
-  const newStock = Math.max(0, (data as MenuItemRow).stock_quantity - quantity);
-  await (supabase
-    .from('menu_items')
-    .update({ stock_quantity: newStock, is_available: newStock > 0 })
-    .eq('id', menuItemId) as any);
+  const { error } = await (supabase.rpc('decrement_stock', {
+    p_menu_item_id: menuItemId,
+    p_quantity: quantity,
+  }) as any);
+  if (error) console.error('decrementStock:', error.message);
 }
 
 /** Restitue le stock via RPC SECURITY DEFINER après annulation */

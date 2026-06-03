@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
+/* ── Statuts ─────────────────────────────────────────────────── */
 const STATUS_CFG: Record<string, { label: string; dot: string }> = {
   pending_payment: { label: 'Attente paiement', dot: 'bg-yellow-400' },
   pending:         { label: 'En attente',        dot: 'bg-orange-400' },
@@ -35,10 +36,15 @@ function MiniStatusBadge({ status }: { status: string }) {
   );
 }
 
-function Avatar({ name, avatarUrl, size = 'lg' }: { name: string; avatarUrl?: string | null; size?: 'sm' | 'lg' }) {
+function Avatar({ name, avatarUrl, size = 'lg' }: {
+  name: string; avatarUrl?: string | null; size?: 'sm' | 'lg';
+}) {
   const dim      = size === 'lg' ? 'w-20 h-20 text-2xl' : 'w-10 h-10 text-sm';
   const initials = name ? name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() : '?';
-  if (avatarUrl) return <img src={avatarUrl} alt={name} className={`${dim} rounded-2xl object-cover border-4 border-white shadow-lg`} />;
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt={name}
+      className={`${dim} rounded-2xl object-cover border-4 border-white shadow-lg`} />;
+  }
   return (
     <div className={`${dim} rounded-2xl bg-gradient-to-br from-uvci-purple to-uvci-green flex items-center justify-center text-white font-black border-4 border-white shadow-lg`}>
       {initials}
@@ -48,13 +54,11 @@ function Avatar({ name, avatarUrl, size = 'lg' }: { name: string; avatarUrl?: st
 
 type Tab = 'profil' | 'commandes' | 'notifications';
 
+/* ══════════════════════════════════════════════════════════════ */
 export default function ProfilePage() {
-  // ── Auth ──────────────────────────────────────────────
-  // `loading` = AuthContext n'a pas encore résolu l'état de session
   const { user, profile, refreshProfile, isAdmin, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  // ── State local ───────────────────────────────────────
   const [tab, setTab]               = useState<Tab>('profil');
   const [dataLoading, setDataLoading] = useState(true);
   const [orders, setOrders]         = useState<Order[]>([]);
@@ -66,55 +70,59 @@ export default function ProfilePage() {
   const [editMode, setEditMode]     = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
-  const mountedRef  = useRef(true);
-  const loadedRef   = useRef(false); // évite double chargement
+  const mountedRef = useRef(true);
 
-  // ── Étape 1 : attendre la résolution de l'auth ────────
-  // Tant que authLoading est true, on ne sait pas encore si l'user est
-  // connecté ou admin — on affiche juste le spinner.
-  // Dès que authLoading passe à false, on décide quoi faire.
+  /* ── Chargement des données ─────────────────────────────────
+   * RÈGLE CLÉ : on n'utilise PAS useRef pour "loadedOnce" car ce ref
+   * persiste entre navigations (le composant ne se démonte pas toujours).
+   * On utilise le cleanup du useEffect pour annuler tout setState orphelin,
+   * et dataLoading=true est réinitialisé à chaque montage via useState(true).
+   * ─────────────────────────────────────────────────────────── */
   useEffect(() => {
-    if (authLoading) return;          // pas encore prêt → patience
+    // authLoading=true → Supabase n'a pas encore résolu la session → attendre
+    if (authLoading) return;
 
-    if (!user) {
-      router.push('/');               // non connecté → accueil
-      return;
-    }
-    if (isAdmin) {
-      router.push('/admin');          // admin → dashboard
-      return;
-    }
+    // Redirige les admins et les non-connectés
+    if (!user)   { router.push('/'); return; }
+    if (isAdmin) { router.push('/admin'); return; }
 
-    // Client connecté — charger les données une seule fois
-    if (loadedRef.current) return;
-    loadedRef.current = true;
     mountedRef.current = true;
+    let cancelled = false; // flag local à CE cycle d'effet (pas un ref global)
 
-    const uid = user.id;
-    Promise.all([
-      getUserOrders(uid),
-      isPushSupported() ? isSubscribed() : Promise.resolve(false),
-    ]).then(([ords, sub]) => {
-      if (!mountedRef.current) return;
-      setOrders(ords);
-      setPushOn(sub);
-    }).catch(console.error)
-      .finally(() => { if (mountedRef.current) setDataLoading(false); });
+    const load = async () => {
+      try {
+        const [ords, sub] = await Promise.all([
+          getUserOrders(user.id),
+          isPushSupported() ? isSubscribed() : Promise.resolve(false),
+        ]);
+        if (cancelled) return; // composant démonté ou effet re-déclenché → ignorer
+        setOrders(ords);
+        setPushOn(sub);
+      } catch (err) {
+        console.error('ProfilePage load error:', err);
+      } finally {
+        if (!cancelled) setDataLoading(false);
+      }
+    };
 
-    return () => { mountedRef.current = false; };
-  // authLoading, isAdmin et user.id sont les seuls déclencheurs légitimes
+    load();
+
+    // Cleanup : marque les setState comme annulés si l'effet est re-déclenché
+    return () => { cancelled = true; mountedRef.current = false; };
+
+  // authLoading, isAdmin, user.id sont les seules dépendances légitimes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAdmin, user?.id]);
 
-  // ── Étape 2 : sync champs édition quand le profil est dispo ──
+  /* ── Sync champs édition ────────────────────────────────────── */
   useEffect(() => {
-    if (!profile && !user) return;
-    setEditName((profile as any)?.display_name ?? user?.email?.split('@')[0] ?? '');
+    if (!user) return;
+    setEditName((profile as any)?.display_name ?? user.email?.split('@')[0] ?? '');
     setEditAvatar((profile as any)?.avatar_url ?? '');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(profile as any)?.display_name, (profile as any)?.avatar_url]);
 
-  // ── Recharge commandes (après annulation) ─────────────
+  /* ── Actions ─────────────────────────────────────────────────── */
   const reloadOrders = () => {
     if (!user) return;
     getUserOrders(user.id)
@@ -122,7 +130,6 @@ export default function ProfilePage() {
       .catch(console.error);
   };
 
-  // ── Actions ───────────────────────────────────────────
   const handleSaveProfile = async () => {
     if (!user) return;
     setSaving(true);
@@ -143,10 +150,12 @@ export default function ProfilePage() {
     setPushL(true);
     try {
       if (pushOn) {
-        await unsubscribeFromPush(user.id); setPushOn(false);
+        await unsubscribeFromPush(user.id);
+        setPushOn(false);
         toast.info('Notifications désactivées');
       } else {
-        const ok = await subscribeToPush(user.id); setPushOn(ok);
+        const ok = await subscribeToPush(user.id);
+        setPushOn(ok);
         if (ok) toast.success('Notifications activées !');
         else    toast.warning('Permission refusée par le navigateur');
       }
@@ -165,14 +174,16 @@ export default function ProfilePage() {
     finally { setCancelling(null); }
   };
 
-  // ── Render ────────────────────────────────────────────
-  // Spinner unifié : auth pas prête OU données en cours de chargement
-  if (authLoading || dataLoading) return (
-    <div className="flex justify-center items-center min-h-[60vh]">
-      <Loader2 className="animate-spin text-uvci-purple" size={36} />
-    </div>
-  );
+  /* ── Spinner : authLoading OU chargement données ────────────── */
+  if (authLoading || dataLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="animate-spin text-uvci-purple" size={36} />
+      </div>
+    );
+  }
 
+  /* ── Données de rendu ────────────────────────────────────────── */
   const displayName = (profile as any)?.display_name || user?.email?.split('@')[0] || 'Utilisateur';
   const avatarUrl   = (profile as any)?.avatar_url ?? null;
   const email       = user?.email ?? '';
@@ -255,7 +266,8 @@ export default function ProfilePage() {
               <Settings size={17} className="text-uvci-purple" /> Informations
             </h2>
             {!editMode && (
-              <button onClick={() => setEditMode(true)} className="text-xs font-bold text-uvci-purple hover:underline">
+              <button onClick={() => setEditMode(true)}
+                className="text-xs font-bold text-uvci-purple hover:underline">
                 Modifier
               </button>
             )}
@@ -264,19 +276,24 @@ export default function ProfilePage() {
           {editMode ? (
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Nom d'affichage</label>
-                <input value={editName} onChange={e => setEditName(e.target.value)} maxLength={40}
-                  placeholder="Votre prénom"
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">
+                  Nom d'affichage
+                </label>
+                <input value={editName} onChange={e => setEditName(e.target.value)}
+                  maxLength={40} placeholder="Votre prénom"
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none text-sm font-medium" />
               </div>
               <div>
-                <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">URL de l'avatar</label>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">
+                  URL de l'avatar
+                </label>
                 <input value={editAvatar} onChange={e => setEditAvatar(e.target.value)}
                   placeholder="https://... (optionnel)"
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-uvci-purple/20 focus:border-uvci-purple outline-none text-sm font-medium" />
                 {editAvatar && (
                   <div className="mt-2 flex items-center gap-3">
-                    <img src={editAvatar} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    <img src={editAvatar} alt=""
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       className="w-12 h-12 rounded-xl object-cover border border-gray-200" />
                     <p className="text-xs text-gray-400">Prévisualisation</p>
                   </div>
@@ -289,7 +306,8 @@ export default function ProfilePage() {
                 </button>
                 <button onClick={handleSaveProfile} disabled={saving || !editName.trim()}
                   className="flex-1 py-3 bg-uvci-purple text-white rounded-xl font-bold hover:bg-uvci-purple/90 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50">
-                  {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Enregistrer
+                  {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                  Enregistrer
                 </button>
               </div>
             </div>
@@ -300,7 +318,8 @@ export default function ProfilePage() {
                 { label: 'Email',           value: email },
                 { label: 'Points fidélité', value: `${balance} pts` },
               ].map(row => (
-                <div key={row.label} className="flex justify-between items-center py-2.5 border-b border-gray-50 last:border-0">
+                <div key={row.label}
+                  className="flex justify-between items-center py-2.5 border-b border-gray-50 last:border-0">
                   <span className="text-sm text-gray-500 font-medium">{row.label}</span>
                   <span className="text-sm font-bold text-gray-800">{row.value}</span>
                 </div>
@@ -328,12 +347,17 @@ export default function ProfilePage() {
               </button>
             </div>
           ) : orders.map(order => (
-            <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition-shadow">
+            <div key={order.id}
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="font-mono text-xs text-gray-400 mb-0.5">#{order.id.slice(0, 8).toUpperCase()}</p>
+                  <p className="font-mono text-xs text-gray-400 mb-0.5">
+                    #{order.id.slice(0, 8).toUpperCase()}
+                  </p>
                   <p className="text-xs text-gray-400">
-                    {new Date(order.created_at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    {new Date(order.created_at).toLocaleString('fr-FR', {
+                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                    })}
                   </p>
                 </div>
                 <MiniStatusBadge status={order.status} />
@@ -342,27 +366,36 @@ export default function ProfilePage() {
               {order.order_items && order.order_items.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-3">
                   {order.order_items.slice(0, 3).map((item, i) => (
-                    <span key={item.id ?? i} className="text-xs bg-gray-100 text-gray-700 font-medium px-2 py-1 rounded-lg">
+                    <span key={item.id ?? i}
+                      className="text-xs bg-gray-100 text-gray-700 font-medium px-2 py-1 rounded-lg">
                       {item.quantity}× {item.menu_items?.name ?? 'Plat'}
                     </span>
                   ))}
                   {order.order_items.length > 3 && (
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">+{order.order_items.length - 3}</span>
+                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">
+                      +{order.order_items.length - 3}
+                    </span>
                   )}
                 </div>
               )}
 
               <div className="flex items-center justify-between">
-                <span className="font-extrabold text-uvci-purple text-sm">{order.total_price.toLocaleString()} FCFA</span>
+                <span className="font-extrabold text-uvci-purple text-sm">
+                  {order.total_price.toLocaleString()} FCFA
+                </span>
                 <div className="flex items-center gap-2">
                   {CANCELLABLE.has(order.status) && (
-                    <button onClick={() => handleCancel(order.id)} disabled={cancelling === order.id}
+                    <button onClick={() => handleCancel(order.id)}
+                      disabled={cancelling === order.id}
                       className="flex items-center gap-1 px-3 py-1.5 bg-red-50 border border-red-200 text-red-500 font-bold rounded-xl text-xs hover:bg-red-100 transition disabled:opacity-50">
-                      {cancelling === order.id ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
+                      {cancelling === order.id
+                        ? <Loader2 size={12} className="animate-spin" />
+                        : <XCircle size={12} />}
                       Annuler
                     </button>
                   )}
-                  <button onClick={() => router.push('/orders')} className="p-1.5 text-gray-400 hover:text-uvci-purple transition">
+                  <button onClick={() => router.push('/orders')}
+                    className="p-1.5 text-gray-400 hover:text-uvci-purple transition">
                     <ChevronRight size={16} />
                   </button>
                 </div>
@@ -388,7 +421,9 @@ export default function ProfilePage() {
           {!isPushSupported() ? (
             <div className="text-center py-8">
               <BellOff size={32} className="mx-auto text-gray-300 mb-3" />
-              <p className="text-sm text-gray-500 font-medium">Votre navigateur ne supporte pas les notifications push.</p>
+              <p className="text-sm text-gray-500 font-medium">
+                Votre navigateur ne supporte pas les notifications push.
+              </p>
             </div>
           ) : (
             <>
@@ -396,7 +431,9 @@ export default function ProfilePage() {
                 <div className="flex-1">
                   <p className="font-bold text-gray-800 text-sm">Alertes commandes</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {pushOn ? 'Vous serez alerté dès que votre commande est prête.' : 'Activez pour recevoir une alerte quand votre commande est prête.'}
+                    {pushOn
+                      ? 'Vous serez alerté dès que votre commande est prête.'
+                      : 'Activez pour recevoir une alerte quand votre commande est prête.'}
                   </p>
                 </div>
                 <button onClick={handlePushToggle} disabled={pushLoading}
@@ -407,7 +444,11 @@ export default function ProfilePage() {
                   }
                 </button>
               </div>
-              <div className={`flex items-center gap-3 p-3 rounded-xl border text-sm ${pushOn ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+              <div className={`flex items-center gap-3 p-3 rounded-xl border text-sm ${
+                pushOn
+                  ? 'bg-green-50 border-green-200 text-green-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-500'
+              }`}>
                 {pushOn
                   ? <><CheckCircle size={16} className="flex-shrink-0" /> Notifications activées</>
                   : <><BellOff size={16} className="flex-shrink-0" /> Notifications désactivées</>
