@@ -20,8 +20,11 @@ export function getPushPermission(): NotificationPermission {
 }
 
 export async function subscribeToPush(userId: string): Promise<boolean> {
-  if (!isPushSupported()) throw new Error('Push non supporté sur ce navigateur');
-  if (!VAPID_PUBLIC_KEY)  throw new Error('Clé VAPID manquante (VITE_VAPID_PUBLIC_KEY)');
+  if (!isPushSupported()) return false;
+  if (!VAPID_PUBLIC_KEY) {
+    console.warn('VITE_VAPID_PUBLIC_KEY non définie — notifications push désactivées');
+    return false;
+  }
 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return false;

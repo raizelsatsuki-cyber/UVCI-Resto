@@ -107,9 +107,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     const timeout = setTimeout(() => {
-      console.warn('Auth timeout — forçage loading=false');
+      console.warn('Auth timeout (1.5s) — forçage loading=false');
       resolve();
-    }, 3000);
+    }, 1500); // 1.5s suffisant — Supabase répond en < 500ms dans 99% des cas
 
     return () => {
       mountedRef.current = false;

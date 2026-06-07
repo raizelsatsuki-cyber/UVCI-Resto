@@ -77,17 +77,32 @@ function AppContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams(); // eslint-disable-line @typescript-eslint/no-unused-vars
 
-  /* Les pages de résultat de paiement sont publiques — affichées immédiatement */
-  if (pathname === '/commande/succes' || pathname === '/commande/echec') {
+  /* ── Pages 100% publiques : rendues SANS attendre l'auth ─────
+   * Le menu, l'accueil et la page about ne nécessitent pas de session.
+   * Les rendre immédiatement évite le spinner de 1-3s perçu sur mobile.
+   * Chaque page gère elle-même l'état auth si elle en a besoin.
+   * ─────────────────────────────────────────────────────────── */
+  const PUBLIC_PATHS = ['/', '/menu', '/about', '/commande/succes', '/commande/echec'];
+  if (PUBLIC_PATHS.includes(pathname)) {
     return (
-      <div className="min-h-screen bg-gray-100">
-        <RouterView />
+      <div className="min-h-screen bg-gray-50">
+        {!loading && user && (
+          <Navbar user={{
+            id: user.id,
+            email: user.email ?? '',
+            role: (profile?.role === 'admin' ? 'admin' : 'student') as 'student' | 'admin' | 'staff',
+            balance_points: profile?.balance_points ?? 0,
+          }} />
+        )}
+        <div className="pt-20">
+          <RouterView />
+        </div>
         <ToastContainer position="bottom-right" autoClose={3000} theme="light" />
       </div>
     );
   }
 
-  /* Spinner de chargement initial — max 2s (timeout dans AuthContext) */
+  /* ── Pages privées : attendre la résolution de l'auth ─────── */
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-uvci-purple">
