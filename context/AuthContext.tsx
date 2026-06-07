@@ -14,7 +14,7 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   unauthorizedEmail: boolean;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: (optimisticUpdates?: Partial<Profile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,9 +48,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const refreshProfile = useCallback(async () => {
+  /**
+   * refreshProfile : 2 modes
+   * - Sans argument → refetch complet depuis la base (utilisé au login)
+   * - Avec updates → mise à jour optimiste locale SANS requête réseau,
+   *   puis sync silencieuse en arrière-plan (utilisé après updateProfile)
+   */
+  const refreshProfile = useCallback(async (optimisticUpdates?: Partial<Profile>) => {
     if (!user) return;
-    await loadProfile(user);
+    if (optimisticUpdates && mountedRef.current) {
+      // Mise à jour immédiate du state local → UI réactive instantanément
+      setProfile(prev => prev ? { ...prev, ...optimisticUpdates } : prev);
+      // Sync en arrière-plan sans bloquer l'UI
+      getProfile(user.id).then(p => {
+        if (p && mountedRef.current) setProfile(p);
+      }).catch(console.error);
+    } else {
+      await loadProfile(user);
+    }
   }, [user, loadProfile]);
 
   // ── Abonnement auth ──────────────────────────────────────────

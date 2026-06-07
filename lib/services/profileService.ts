@@ -3,14 +3,29 @@ import type { Database } from '../database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
-export async function getProfile(userId: string): Promise<Profile | null> {
+// Cache mémoire simple — évite un aller-retour réseau à chaque navigation
+// TTL 30s : suffisant pour une session active, court enough pour rester frais
+const profileCache = new Map<string, { data: Profile; ts: number }>();
+const CACHE_TTL_MS = 30_000;
+
+export async function getProfile(userId: string, bypassCache = false): Promise<Profile | null> {
+  if (!bypassCache) {
+    const cached = profileCache.get(userId);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.data;
+  }
   const { data, error } = await (supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
     .single() as any);
   if (error) { console.error('getProfile:', error.message); return null; }
+  profileCache.set(userId, { data: data as Profile, ts: Date.now() });
   return data as Profile;
+}
+
+/** Invalide le cache pour forcer un refetch propre */
+export function invalidateProfileCache(userId: string): void {
+  profileCache.delete(userId);
 }
 
 export async function updateBalancePoints(userId: string, delta: number): Promise<number> {
@@ -51,4 +66,6 @@ export async function updateProfile(
     .update(updates)
     .eq('id', userId) as any);
   if (error) throw new Error(error.message);
+  // Invalider le cache pour que le prochain getProfile refetch depuis la base
+  invalidateProfileCache(userId);
 }

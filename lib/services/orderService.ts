@@ -5,18 +5,35 @@ import type { Order, CartItem } from '../../types/index';
 export async function getAllOrders(): Promise<Order[]> {
   const { data, error } = await (supabase
     .from('orders')
-    .select('*, order_items(*, menu_items(name))')
-    .order('created_at', { ascending: false }) as any);
+    .select(`
+      id, user_id, client_phone, status, total_price,
+      payment_method, created_at, pickup_qr_token, qr_used,
+      order_items (
+        id, quantity, price_at_order,
+        menu_items ( name )
+      )
+    `)
+    .order('created_at', { ascending: false })
+    .limit(200) as any);
   if (error) throw new Error(error.message);
   return (data as Order[]) ?? [];
 }
 
 export async function getUserOrders(userId: string): Promise<Order[]> {
+  // Sélection ciblée : pas de '*' sur order_items pour éviter le surcoût réseau
   const { data, error } = await (supabase
     .from('orders')
-    .select('*, order_items(*, menu_items(name))')
+    .select(`
+      id, status, total_price, payment_method,
+      created_at, pickup_qr_token, qr_used,
+      order_items (
+        id, quantity, price_at_order, selected_option,
+        menu_items ( name )
+      )
+    `)
     .eq('user_id', userId)
-    .order('created_at', { ascending: false }) as any);
+    .order('created_at', { ascending: false })
+    .limit(50) as any);                     // limite raisonnable — paginer si besoin
   if (error) throw new Error(error.message);
   return (data as Order[]) ?? [];
 }

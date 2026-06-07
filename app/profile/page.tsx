@@ -133,16 +133,24 @@ export default function ProfilePage() {
   const handleSaveProfile = async () => {
     if (!user) return;
     setSaving(true);
+
+    const newDisplayName = editName.trim();
+    const newAvatarUrl   = editAvatar.trim() || undefined;
+
     try {
-      await updateProfile(user.id, {
-        display_name: editName.trim(),
-        avatar_url: editAvatar.trim() || undefined,
-      });
-      await refreshProfile();
+      // 1. Mise à jour en base
+      await updateProfile(user.id, { display_name: newDisplayName, avatar_url: newAvatarUrl });
+
+      // 2. Mise à jour optimiste du state local → UI instantanée, zéro refetch bloquant
+      await refreshProfile({ display_name: newDisplayName, avatar_url: newAvatarUrl ?? null });
+
       toast.success('Profil mis à jour !');
       setEditMode(false);
-    } catch (err: any) { toast.error(err.message); }
-    finally { setSaving(false); }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePushToggle = async () => {
@@ -174,11 +182,30 @@ export default function ProfilePage() {
     finally { setCancelling(null); }
   };
 
-  /* ── Spinner : authLoading OU chargement données ────────────── */
+  /* ── Skeleton : authLoading OU chargement données ───────────── */
   if (authLoading || dataLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[60vh]">
-        <Loader2 className="animate-spin text-uvci-purple" size={36} />
+      <div className="container mx-auto px-4 pb-24 pt-6 max-w-xl">
+        {/* Header skeleton */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-9 h-9 bg-gray-200 rounded-xl animate-pulse" />
+          <div className="w-32 h-7 bg-gray-200 rounded-xl animate-pulse" />
+        </div>
+        {/* Hero card skeleton */}
+        <div className="bg-gradient-to-br from-uvci-purple/30 to-uvci-green/30 rounded-3xl p-6 mb-5 h-52 animate-pulse" />
+        {/* Tabs skeleton */}
+        <div className="flex gap-2 mb-5">
+          {[1,2,3].map(i => <div key={i} className="flex-1 h-11 bg-gray-200 rounded-xl animate-pulse" />)}
+        </div>
+        {/* Content skeleton */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+          {[1,2,3].map(i => (
+            <div key={i} className="flex justify-between items-center py-2.5 border-b border-gray-50 last:border-0">
+              <div className="w-24 h-4 bg-gray-200 rounded animate-pulse" />
+              <div className="w-32 h-4 bg-gray-200 rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
