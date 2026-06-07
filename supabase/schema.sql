@@ -180,3 +180,20 @@ begin
   return json_build_object('success', true, 'new_balance', v_balance - p_points);
 end;
 $$;
+
+-- ══════════════════════════════════════════════════════════════
+-- PATCH : champs de paiement Wave manquants sur la table orders
+-- Bug 5 : wave_transaction_id déjà présent mais payment_status manquait
+-- Bug 8 : payment_status requis par le polling de /payment/page.tsx
+-- ══════════════════════════════════════════════════════════════
+
+-- À exécuter dans Supabase Dashboard → SQL Editor si la DB est déjà créée :
+--
+-- ALTER TABLE orders
+--   ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'unpaid'
+--     CHECK (payment_status IN ('unpaid','pending','paid','failed','cancelled')),
+--   ADD COLUMN IF NOT EXISTS wave_client_ref text;
+--
+-- CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders (payment_status);
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_wave_client_ref
+--   ON orders (wave_client_ref) WHERE wave_client_ref IS NOT NULL;

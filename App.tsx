@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { CartProvider } from './context/CartContext';
+import { CartProvider, useCart } from './context/CartContext';
 import { RouterProvider, usePathname, useSearchParams } from './lib/routerContext';
 import { Navbar } from './components/Navbar';
 import LoginPage from './app/auth/login/page';
@@ -13,16 +13,26 @@ import AdminDashboard from './app/admin/dashboard/page';
 import QRScannerPage from './app/admin/scanner/page';
 import ProfilePage from './app/profile/page';
 import AboutPage from './app/about/page';
+import PaymentVerificationPage from './app/payment/page';
 
-/* ── Résultat de paiement Wave ── */
+// ── Page résultat Wave (fallback si retour direct depuis app Wave) ────────────
+// Bug 7 fix : cette page est maintenant un fallback de secours,
+// pas le flux principal. Le flux principal passe par /payment.
 function PaymentResult({ success }: { success: boolean }) {
-  const params  = useSearchParams();
-  const orderId = params.get('order');
+  const params   = useSearchParams();
+  const orderId  = params.get('order');
+  const { clearCart } = useCart();
+
+  // Si succès et qu'on arrive ici (retour direct Wave), vider le panier
+  React.useEffect(() => {
+    if (success) clearCart();
+  }, [success, clearCart]);
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 gap-5">
       {success
         ? <CheckCircle size={64} className="text-uvci-green" />
-        : <XCircle size={64} className="text-red-400" />}
+        : <XCircle    size={64} className="text-red-400" />}
       <div>
         <h2 className="text-2xl font-extrabold text-gray-800 mb-1">
           {success ? 'Paiement réussi !' : 'Paiement échoué'}
@@ -32,7 +42,11 @@ function PaymentResult({ success }: { success: boolean }) {
             ? 'Votre commande est en cours de préparation.'
             : 'Votre paiement n\'a pas pu être effectué. Réessayez.'}
         </p>
-        {orderId && <p className="font-mono text-xs text-gray-400 mt-1">#{orderId.slice(0,8).toUpperCase()}</p>}
+        {orderId && (
+          <p className="font-mono text-xs text-gray-400 mt-1">
+            #{orderId.slice(0, 8).toUpperCase()}
+          </p>
+        )}
       </div>
       <a
         href="/#/orders"
@@ -53,44 +67,70 @@ function Forbidden() {
   );
 }
 
-/* ── Routeur principal ── */
+// ── Routeur principal ─────────────────────────────────────────────────────────
 function RouterView() {
-  const pathname = usePathname();
-  const { profile } = useAuth();
+  const pathname     = usePathname();
+  const params       = useSearchParams();
+  const { profile }  = useAuth();
+
+  // Bug 6 fix : route /payment ajoutée ici
+  if (pathname === '/payment') {
+    const orderId  = params.get('orderId') ?? '';
+    const waveUrl  = params.get('waveUrl')  ? decodeURIComponent(params.get('waveUrl')!) : undefined;
+    if (orderId) {
+      return (
+        <div className="container mx-auto px-4 pt-8">
+          <PaymentVerificationPage orderId={orderId} waveUrl={waveUrl} />
+        </div>
+      );
+    }
+    // Si pas d'orderId, retour accueil
+    return <HomePage />;
+  }
 
   switch (pathname) {
-    case '/menu':              return <div className="container mx-auto px-4 pb-20 pt-6"><MenuPage /></div>;
-    case '/orders':            return <ClientOrdersPage />;
-    case '/profile':           return <ProfilePage />;
-    case '/about':             return <div className="container mx-auto px-4 pt-8"><AboutPage /></div>;
-    case '/admin':             return profile?.role === 'admin' ? <AdminDashboard /> : <Forbidden />;
-    case '/admin/scanner':     return profile?.role === 'admin' ? <QRScannerPage /> : <Forbidden />;
-    case '/commande/succes':   return <PaymentResult success />;
-    case '/commande/echec':    return <PaymentResult success={false} />;
-    default:                   return <HomePage />;
+    case '/menu':
+      return <div className="container mx-auto px-4 pb-20 pt-6"><MenuPage /></div>;
+    case '/orders':
+      return <ClientOrdersPage />;
+    case '/profile':
+      return <ProfilePage />;
+    case '/about':
+      return <div className="container mx-auto px-4 pt-8"><AboutPage /></div>;
+    case '/admin':
+      return profile?.role === 'admin' ? <AdminDashboard />    : <Forbidden />;
+    case '/admin/scanner':
+      return profile?.role === 'admin' ? <QRScannerPage />     : <Forbidden />;
+    // Fallback Wave (retour direct depuis l'app Wave sans passer par /payment)
+    case '/commande/succes':
+      return <PaymentResult success />;
+    case '/commande/echec':
+      return <PaymentResult success={false} />;
+    case '/payment/success':
+      return <PaymentResult success />;
+    case '/payment/failed':
+      return <PaymentResult success={false} />;
+    default:
+      return <HomePage />;
   }
 }
 
-/* ── Contenu principal ── */
+// ── Contenu principal ─────────────────────────────────────────────────────────
 function AppContent() {
   const { user, profile, loading, unauthorizedEmail } = useAuth();
   const pathname = usePathname();
-  const searchParams = useSearchParams(); // eslint-disable-line @typescript-eslint/no-unused-vars
 
-  /* ── Pages 100% publiques : rendues SANS attendre l'auth ─────
-   * Le menu, l'accueil et la page about ne nécessitent pas de session.
-   * Les rendre immédiatement évite le spinner de 1-3s perçu sur mobile.
-   * Chaque page gère elle-même l'état auth si elle en a besoin.
-   * ─────────────────────────────────────────────────────────── */
-  const PUBLIC_PATHS = ['/', '/menu', '/about', '/commande/succes', '/commande/echec'];
+  const PUBLIC_PATHS = ['/', '/menu', '/about', '/commande/succes', '/commande/echec', '/payment/success', '/payment/failed'];
+  const isPaymentPage = pathname === '/payment';
+
   if (PUBLIC_PATHS.includes(pathname)) {
     return (
       <div className="min-h-screen bg-gray-50">
         {!loading && user && (
           <Navbar user={{
-            id: user.id,
-            email: user.email ?? '',
-            role: (profile?.role === 'admin' ? 'admin' : 'student') as 'student' | 'admin' | 'staff',
+            id:             user.id,
+            email:          user.email ?? '',
+            role:           (profile?.role === 'admin' ? 'admin' : 'student') as 'student' | 'admin' | 'staff',
             balance_points: profile?.balance_points ?? 0,
           }} />
         )}
@@ -102,7 +142,16 @@ function AppContent() {
     );
   }
 
-  /* ── Pages privées : attendre la résolution de l'auth ─────── */
+  // Page de vérification paiement : pas de navbar, fond blanc propre
+  if (isPaymentPage) {
+    return (
+      <div className="min-h-screen bg-white">
+        <RouterView />
+        <ToastContainer position="top-center" autoClose={4000} theme="light" />
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-uvci-purple">
@@ -112,7 +161,6 @@ function AppContent() {
     );
   }
 
-  /* Email Google hors domaine @uvci.edu.ci */
   if (unauthorizedEmail) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 text-center px-4">
@@ -132,7 +180,6 @@ function AppContent() {
     );
   }
 
-  /* Non connecté → login */
   if (!user) {
     return (
       <>
@@ -143,9 +190,9 @@ function AppContent() {
   }
 
   const navUser = {
-    id: user.id,
-    email: user.email ?? '',
-    role: (profile?.role === 'admin' ? 'admin' : 'student') as 'student' | 'admin' | 'staff',
+    id:             user.id,
+    email:          user.email ?? '',
+    role:           (profile?.role === 'admin' ? 'admin' : 'student') as 'student' | 'admin' | 'staff',
     balance_points: profile?.balance_points ?? 0,
   };
 

@@ -190,3 +190,57 @@ export async function cancelOrder(
     )
   );
 }
+
+// ─── Fonctions requises par /payment/page.tsx ─────────────────────────────────
+// Bug 8 fix : ces deux fonctions manquaient — la page de vérification
+// importait getOrderPaymentStatus et subscribeToOrderPayment qui n'existaient pas.
+
+/** Polling : récupère le statut de paiement d'une commande */
+export async function getOrderPaymentStatus(
+  orderId: string,
+): Promise<{ status: string; payment_status: string; transaction_id: string | null } | null> {
+  const { data, error } = await (supabase
+    .from('orders')
+    .select('status, payment_status, wave_transaction_id')
+    .eq('id', orderId)
+    .single() as any);
+
+  if (error || !data) return null;
+
+  return {
+    status:         (data as any).status,
+    payment_status: (data as any).payment_status ?? 'unpaid',
+    transaction_id: (data as any).wave_transaction_id ?? null,
+  };
+}
+
+/** Realtime : souscription temps réel sur le statut de paiement d'une commande */
+export function subscribeToOrderPayment(
+  orderId: string,
+  onUpdate: (payload: {
+    status: string;
+    payment_status: string;
+    transaction_id: string | null;
+  }) => void,
+) {
+  return supabase
+    .channel(`order:payment:${orderId}`)
+    .on(
+      'postgres_changes',
+      {
+        event:  'UPDATE',
+        schema: 'public',
+        table:  'orders',
+        filter: `id=eq.${orderId}`,
+      },
+      (payload) => {
+        const rec = payload.new as any;
+        onUpdate({
+          status:         rec.status          ?? 'pending_payment',
+          payment_status: rec.payment_status  ?? 'unpaid',
+          transaction_id: rec.wave_transaction_id ?? null,
+        });
+      },
+    )
+    .subscribe();
+}

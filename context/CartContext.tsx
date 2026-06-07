@@ -7,8 +7,8 @@ type PaymentMethod = 'wave' | 'cash';
 
 export type ProcessOrderResult =
   | { status: 'success' }
-  | { status: 'wave'; checkoutUrl: string }
-  | { status: 'failed' }
+  | { status: 'wave'; checkoutUrl: string; orderId: string }  // Bug 1 fix : inclure orderId
+  | { status: 'failed'; message?: string }
   | { status: 'unauthorized' };
 
 interface CartContextType {
@@ -35,7 +35,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const optKey = JSON.stringify([...options].sort((a, b) => a.name.localeCompare(b.name)));
       const idx = prev.findIndex(i =>
         i.menu_item.id === item.id &&
-        JSON.stringify([...i.selectedOptions].sort((a, b) => a.name.localeCompare(b.name))) === optKey
+        JSON.stringify([...i.selectedOptions].sort((a, b) => a.name.localeCompare(b.name))) === optKey,
       );
       if (idx > -1) {
         const u = [...prev];
@@ -52,7 +52,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateQuantity = (itemId: string, delta: number) =>
     setCartItems(p =>
       p.map(i => i.id === itemId ? { ...i, quantity: i.quantity + delta } : i)
-       .filter(i => i.quantity > 0)
+       .filter(i => i.quantity > 0),
     );
 
   const clearCart = () => setCartItems([]);
@@ -69,31 +69,37 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   [cartItems]);
 
   /**
-   * FIX : le flux Wave est désormais correctement séparé.
-   * - cash  → processOrder → 'success'
-   * - wave  → processOrder (crée la commande) → createWaveCheckout → renvoie l'URL de paiement
-   *           Le panier est vidé APRÈS la redirection effective (dans CartSidebar)
+   * Bug 1 fix : Le panier n'est PAS vidé ici pour Wave.
+   * Il sera vidé par CartSidebar UNIQUEMENT après confirmation
+   * du paiement sur la page /payment (polling Realtime Supabase).
+   *
+   * Bug 2 fix : On retourne orderId pour que CartSidebar puisse
+   * naviguer vers /payment?orderId=... au lieu de window.location.href.
    */
   const placeOrder = async (phoneNumber: string): Promise<ProcessOrderResult> => {
-    if (cartItems.length === 0) return { status: 'failed' };
+    if (cartItems.length === 0) return { status: 'failed', message: 'Panier vide' };
 
     const result = await processOrder(cartItems, phoneNumber, paymentMethod, totalAmount);
+
     if (result.status === 'unauthorized') return { status: 'unauthorized' };
     if (result.status === 'failed')       return { status: 'failed' };
 
     if (paymentMethod === 'cash') {
-      clearCart();
+      clearCart();   // Cash : paiement immédiat → vider le panier tout de suite
       return { status: 'success' };
     }
 
-    // Wave : on a maintenant l'orderId dans result
+    // Wave : créer le checkout SANS vider le panier
     try {
       const wave = await createWaveCheckout(result.orderId, totalAmount, phoneNumber);
-      clearCart();
-      return { status: 'wave', checkoutUrl: wave.checkoutUrl };
+      // NE PAS clearCart() ici — le panier sera vidé après confirmation Wave
+      return { status: 'wave', checkoutUrl: wave.checkoutUrl, orderId: result.orderId };
     } catch (err) {
       console.error('Wave checkout error:', err);
-      return { status: 'failed' };
+      return {
+        status: 'failed',
+        message: err instanceof Error ? err.message : 'Erreur création paiement Wave',
+      };
     }
   };
 
