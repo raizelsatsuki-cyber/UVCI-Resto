@@ -114,13 +114,16 @@ export default function ProfilePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAdmin, user?.id]);
 
-  /* ── Sync champs édition ────────────────────────────────────── */
+  /* ── Sync champs édition ─────────────────────────────────────
+   * Ne pas écraser pendant que l'utilisateur est en train de modifier
+   * (editMode=true) — sinon les frappes sont effacées par le useEffect
+   * ──────────────────────────────────────────────────────────── */
   useEffect(() => {
-    if (!user) return;
+    if (!user || editMode) return;
     setEditName((profile as any)?.display_name ?? user.email?.split('@')[0] ?? '');
     setEditAvatar((profile as any)?.avatar_url ?? '');
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(profile as any)?.display_name, (profile as any)?.avatar_url]);
+  }, [(profile as any)?.display_name, (profile as any)?.avatar_url, editMode]);
 
   /* ── Actions ─────────────────────────────────────────────────── */
   const reloadOrders = () => {
@@ -141,11 +144,15 @@ export default function ProfilePage() {
       // 1. Mise à jour en base
       await updateProfile(user.id, { display_name: newDisplayName, avatar_url: newAvatarUrl });
 
-      // 2. Mise à jour optimiste du state local → UI instantanée, zéro refetch bloquant
+      // 2. Fermer le mode édition AVANT refreshProfile pour éviter la race
+      //    condition où le useEffect de sync écrase editName pendant que
+      //    editMode est encore true
+      setEditMode(false);
+      toast.success('Profil mis à jour !');
+
+      // 3. Mise à jour optimiste locale puis sync arrière-plan (bypassCache)
       await refreshProfile({ display_name: newDisplayName, avatar_url: newAvatarUrl ?? null });
 
-      toast.success('Profil mis à jour !');
-      setEditMode(false);
     } catch (err: any) {
       toast.error(err.message);
     } finally {

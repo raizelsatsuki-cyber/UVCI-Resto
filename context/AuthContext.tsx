@@ -14,23 +14,27 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   unauthorizedEmail: boolean;
+  /**
+   * refreshProfile :
+   * - Sans argument → refetch complet depuis la base (bypassCache=true)
+   * - Avec optimisticUpdates → applique les nouvelles valeurs immédiatement
+   *   dans le state local, PUIS sync la base en arrière-plan (bypassCache=true)
+   */
   refreshProfile: (optimisticUpdates?: Partial<Profile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser]       = useState<SupabaseUser | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser]           = useState<SupabaseUser | null>(null);
+  const [profile, setProfile]     = useState<Profile | null>(null);
+  const [session, setSession]     = useState<Session | null>(null);
+  const [loading, setLoading]     = useState(true);
   const [unauthorized, setUnauth] = useState(false);
 
   const mountedRef = useRef(true);
 
-  // ── Chargement du profil ─────────────────────────────────────
-  // Pas de ref "profileLoading" : si deux appels arrivent en même temps,
-  // le deuxième écrase le premier — c'est acceptable et évite les deadlocks.
+  /* ── Chargement du profil depuis la base ──────────────────── */
   const loadProfile = useCallback(async (authUser: SupabaseUser): Promise<void> => {
     if (!isUVCIEmail(authUser.email)) {
       if (mountedRef.current) { setUnauth(true); setProfile(null); }
@@ -39,39 +43,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (mountedRef.current) setUnauth(false);
     try {
-      let p = await getProfile(authUser.id);
+      // bypassCache=true : on veut toujours la donnée fraîche au login
+      let p = await getProfile(authUser.id, true);
       if (!p) p = await ensureProfile(authUser.id, authUser.email ?? '');
       if (mountedRef.current) setProfile(p);
     } catch (err) {
       console.error('loadProfile error:', err);
-      // Ne pas bloquer : on laisse l'UI se rendre même sans profil
     }
   }, []);
 
-  /**
-   * refreshProfile : 2 modes
-   * - Sans argument → refetch complet depuis la base (utilisé au login)
-   * - Avec updates → mise à jour optimiste locale SANS requête réseau,
-   *   puis sync silencieuse en arrière-plan (utilisé après updateProfile)
-   */
+  /* ── refreshProfile ───────────────────────────────────────── */
   const refreshProfile = useCallback(async (optimisticUpdates?: Partial<Profile>) => {
     if (!user) return;
-    if (optimisticUpdates && mountedRef.current) {
-      // Mise à jour immédiate du state local → UI réactive instantanément
-      setProfile(prev => prev ? { ...prev, ...optimisticUpdates } : prev);
-      // Sync en arrière-plan sans bloquer l'UI
-      getProfile(user.id).then(p => {
-        if (p && mountedRef.current) setProfile(p);
-      }).catch(console.error);
+
+    if (optimisticUpdates) {
+      // 1. Mise à jour locale immédiate → UI réactive à 0ms
+      if (mountedRef.current) {
+        setProfile(prev => prev ? { ...prev, ...optimisticUpdates } : prev);
+      }
+      // 2. Sync arrière-plan avec bypassCache=true pour lire la vraie valeur en base
+      //    Petit délai pour laisser Postgres propager l'écriture
+      setTimeout(() => {
+        getProfile(user.id, true).then(fresh => {
+          if (fresh && mountedRef.current) setProfile(fresh);
+        }).catch(console.error);
+      }, 400);
     } else {
+      // Refetch complet (login, déconnexion, etc.)
       await loadProfile(user);
     }
   }, [user, loadProfile]);
 
-  // ── Abonnement auth ──────────────────────────────────────────
+  /* ── Abonnement auth ──────────────────────────────────────── */
   useEffect(() => {
     mountedRef.current = true;
-    let resolved = false; // garantit setLoading(false) exactement une fois par montage
+    let resolved = false;
 
     const resolve = () => {
       if (!resolved && mountedRef.current) {
@@ -83,8 +89,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, s: Session | null) => {
         if (!mountedRef.current) return;
-
-        // TOKEN_REFRESHED : session rafraîchie en arrière-plan, rien à changer
         if (event === 'TOKEN_REFRESHED') { resolve(); return; }
 
         setSession(s);
@@ -98,12 +102,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (event === 'SIGNED_OUT') setUnauth(false);
           }
         }
-
-        resolve(); // débloque le loading après le premier event traité
+        resolve();
       }
     );
 
-    // Filet de sécurité : si Supabase ne répond pas en 3s on débloque quand même
     const timeout = setTimeout(() => {
       console.warn('Auth timeout — forçage loading=false');
       resolve();
@@ -113,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       mountedRef.current = false;
       subscription.unsubscribe();
       clearTimeout(timeout);
-      resolved = true; // empêche resolve() après démontage
+      resolved = true;
     };
   }, [loadProfile]);
 
