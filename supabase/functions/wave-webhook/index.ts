@@ -150,8 +150,12 @@ serve(async (req: Request) => {
         paid_at:              session.when_completed ?? new Date().toISOString(),
       };
     } else if (isFailure) {
+      // 'payment_failed' n'existe pas dans orders_status_check (CHECK constraint) :
+      // valeurs autorisées = pending_payment|pending|paid|preparing|ready|completed|delivered|cancelled
+      // On garde status='pending_payment' (commande retentable) et on marque
+      // payment_status='failed' — /payment/page.tsx ne lit que payment_status.
       updatePayload = {
-        status:         'payment_failed',
+        status:         'pending_payment',
         payment_status: 'failed',
       };
     } else {
