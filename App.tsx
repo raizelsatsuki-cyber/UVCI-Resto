@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider, useCart } from './context/CartContext';
 import { RouterProvider, usePathname, useSearchParams } from './lib/routerContext';
 import { Navbar } from './components/Navbar';
+import { signInWithGoogle } from './lib/services/authService';
 import LoginPage from './app/auth/login/page';
 import HomePage from './app/page';
 import MenuPage from './app/menu/page';
@@ -126,13 +127,30 @@ function AppContent() {
   if (PUBLIC_PATHS.includes(pathname)) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {!loading && user && (
+        {!loading && user ? (
           <Navbar user={{
             id:             user.id,
             email:          user.email ?? '',
             role:           (profile?.role === 'admin' ? 'admin' : 'student') as 'student' | 'admin' | 'staff',
             balance_points: profile?.balance_points ?? 0,
           }} />
+        ) : (
+          // ── Header invité : pas de blocage sur `loading`, toujours visible
+          // pour que /menu, / et /about ne paraissent jamais "sans en-tête"
+          <header className="fixed top-0 inset-x-0 z-40 bg-white border-b border-gray-100 shadow-sm">
+            <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-extrabold text-uvci-purple text-lg">
+                <span className="w-8 h-8 rounded-lg bg-uvci-purple text-white flex items-center justify-center text-sm">U</span>
+                UVCI Resto
+              </div>
+              <button
+                onClick={() => { signInWithGoogle().catch(console.error); }}
+                className="px-4 py-2 bg-uvci-purple text-white text-sm font-bold rounded-xl hover:bg-uvci-purple/90 transition"
+              >
+                Se connecter
+              </button>
+            </div>
+          </header>
         )}
         <div className="pt-20">
           <RouterView />
