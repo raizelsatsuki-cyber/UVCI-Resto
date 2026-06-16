@@ -3,9 +3,8 @@ import { Loader2, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider, useCart } from './context/CartContext';
-import { RouterProvider, usePathname, useSearchParams } from './lib/routerContext';
+import { RouterProvider, usePathname, useSearchParams, useRouter } from './lib/routerContext';
 import { Navbar } from './components/Navbar';
-import { signInWithGoogle } from './lib/services/authService';
 import LoginPage from './app/auth/login/page';
 import HomePage from './app/page';
 import MenuPage from './app/menu/page';
@@ -92,6 +91,8 @@ function RouterView() {
   switch (pathname) {
     case '/menu':
       return <div className="container mx-auto px-4 pb-20 pt-6"><MenuPage /></div>;
+    case '/auth/login':
+      return <LoginPage />;
     case '/orders':
       return <ClientOrdersPage />;
     case '/profile':
@@ -120,6 +121,7 @@ function RouterView() {
 function AppContent() {
   const { user, profile, loading, unauthorizedEmail } = useAuth();
   const pathname = usePathname();
+  const router   = useRouter();
 
   const PUBLIC_PATHS = ['/', '/menu', '/about', '/commande/succes', '/commande/echec', '/payment/success', '/payment/failed'];
   const isPaymentPage = pathname === '/payment';
@@ -144,7 +146,7 @@ function AppContent() {
                 UVCI Resto
               </div>
               <button
-                onClick={() => { signInWithGoogle().catch(console.error); }}
+                onClick={() => router.push('/auth/login')}
                 className="px-4 py-2 bg-uvci-purple text-white text-sm font-bold rounded-xl hover:bg-uvci-purple/90 transition"
               >
                 Se connecter
