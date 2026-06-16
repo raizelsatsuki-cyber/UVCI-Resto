@@ -1,12 +1,12 @@
 import { supabase } from '../supabaseClient';
 
 const ALLOWED_DOMAIN  = '@uvci.edu.ci';
-const PRODUCTION_URL  = 'https://uvci-resto-lordlionels-projects-a8361f43.vercel.app';
-
 function getRedirectUrl(): string {
-  if (typeof window === 'undefined') return PRODUCTION_URL;
-  const { protocol, host } = window.location;
-  return host.includes('localhost') ? `${protocol}//${host}` : PRODUCTION_URL;
+  if (typeof window === 'undefined') return 'https://uvci-resto.vercel.app';
+  // FIX 2 : on redirige vers origin + '/#/' pour que le RouterProvider (hash-based)
+  // atterrisse sur la page d'accueil après callback OAuth au lieu de '/' sans hash
+  // qui pourrait déclencher un re-render avant que le hash soit restauré
+  return `${window.location.origin}/#/`;
 }
 
 /** Connexion Google OAuth — étudiants */

@@ -69,9 +69,9 @@ function Forbidden() {
 
 // ── Routeur principal ─────────────────────────────────────────────────────────
 function RouterView() {
-  const pathname     = usePathname();
-  const params       = useSearchParams();
-  const { profile }  = useAuth();
+  const pathname                    = usePathname();
+  const params                      = useSearchParams();
+  const { profile, profileLoading } = useAuth();  // FIX 4 : profileLoading doit venir du hook
 
   // Bug 6 fix : route /payment ajoutée ici
   if (pathname === '/payment') {
@@ -100,8 +100,10 @@ function RouterView() {
     case '/about':
       return <div className="container mx-auto px-4 pt-8"><AboutPage /></div>;
     case '/admin':
+      if (profileLoading) return <div className="flex justify-center items-center min-h-[60vh]"><Loader2 size={36} className="animate-spin text-uvci-purple" /></div>;
       return profile?.role === 'admin' ? <AdminDashboard />    : <Forbidden />;
     case '/admin/scanner':
+      if (profileLoading) return <div className="flex justify-center items-center min-h-[60vh]"><Loader2 size={36} className="animate-spin text-uvci-purple" /></div>;
       return profile?.role === 'admin' ? <QRScannerPage />     : <Forbidden />;
     // Fallback Wave (retour direct depuis l'app Wave sans passer par /payment)
     case '/commande/succes':
@@ -119,17 +121,28 @@ function RouterView() {
 
 // ── Contenu principal ─────────────────────────────────────────────────────────
 function AppContent() {
-  const { user, profile, loading, unauthorizedEmail } = useAuth();
+  const { user, profile, loading, profileLoading, isAdmin, unauthorizedEmail } = useAuth();
   const pathname = usePathname();
   const router   = useRouter();
 
-  const PUBLIC_PATHS = ['/', '/menu', '/about', '/commande/succes', '/commande/echec', '/payment/success', '/payment/failed'];
+  // FIX 1 : rediriger automatiquement après connexion réussie
+  // Quand un user se connecte depuis /auth/login, App.tsx reçoit le nouvel user
+  // via AuthContext mais LoginPage ne navigue pas. On gère la redirection ici.
+  React.useEffect(() => {
+    if (!user || loading || profileLoading) return;
+    if (pathname === '/auth/login') {
+      // Rediriger selon le rôle une fois le profil chargé
+      router.push(isAdmin ? '/admin' : '/');
+    }
+  }, [user, loading, profileLoading, isAdmin, pathname, router]);
+
+  const PUBLIC_PATHS = ['/', '/menu', '/about', '/auth/login', '/commande/succes', '/commande/echec', '/payment/success', '/payment/failed'];
   const isPaymentPage = pathname === '/payment';
 
   if (PUBLIC_PATHS.includes(pathname)) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {!loading && user ? (
+        {(!loading && user) ? (
           <Navbar user={{
             id:             user.id,
             email:          user.email ?? '',
