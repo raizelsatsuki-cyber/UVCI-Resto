@@ -1,24 +1,27 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  createContext, useContext, useState,
+  useEffect, useCallback, useRef,
+} from 'react';
 import type { User as SupabaseUser, Session, AuthChangeEvent } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabaseClient';
+import { supabase }                from '../lib/supabaseClient';
 import { getProfile, ensureProfile } from '../lib/services/profileService';
-import { isUVCIEmail } from '../lib/services/authService';
-import type { Database } from '../lib/database.types';
+import { isUVCIEmail }             from '../lib/services/authService';
+import type { Database }           from '../lib/database.types';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
 interface AuthContextType {
-  user: SupabaseUser | null;
-  profile: Profile | null;
-  session: Session | null;
-  loading: boolean;
-  isAdmin: boolean;
+  user:              SupabaseUser | null;
+  profile:           Profile | null;
+  session:           Session | null;
+  loading:           boolean;   // session Supabase pas encore résolue
+  isAdmin:           boolean;
   unauthorizedEmail: boolean;
   /**
-   * refreshProfile :
-   * - Sans argument → refetch complet depuis la base (bypassCache=true)
-   * - Avec optimisticUpdates → applique les nouvelles valeurs immédiatement
-   *   dans le state local, PUIS sync la base en arrière-plan (bypassCache=true)
+   * refreshProfile() — deux modes :
+   *  - sans arg  → refetch depuis la base (bypassCache=true)
+   *  - avec arg  → mise à jour optimiste locale, sync DB en arrière-plan
+   *                NE MODIFIE PAS profileLoading → pas de re-render global
    */
   refreshProfile: (optimisticUpdates?: Partial<Profile>) => Promise<void>;
 }
@@ -26,15 +29,15 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser]           = useState<SupabaseUser | null>(null);
-  const [profile, setProfile]     = useState<Profile | null>(null);
-  const [session, setSession]     = useState<Session | null>(null);
-  const [loading, setLoading]     = useState(true);
+  const [user,      setUser]    = useState<SupabaseUser | null>(null);
+  const [profile,   setProfile] = useState<Profile | null>(null);
+  const [session,   setSession] = useState<Session | null>(null);
+  const [loading,   setLoading] = useState(true);
   const [unauthorized, setUnauth] = useState(false);
 
   const mountedRef = useRef(true);
 
-  /* ── Chargement du profil depuis la base ──────────────────── */
+  /* ── loadProfile : charge depuis Supabase ──────────────────── */
   const loadProfile = useCallback(async (authUser: SupabaseUser): Promise<void> => {
     if (!isUVCIEmail(authUser.email)) {
       if (mountedRef.current) { setUnauth(true); setProfile(null); }
@@ -43,7 +46,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (mountedRef.current) setUnauth(false);
     try {
-      // bypassCache=true : on veut toujours la donnée fraîche au login
       let p = await getProfile(authUser.id, true);
       if (!p) p = await ensureProfile(authUser.id, authUser.email ?? '');
       if (mountedRef.current) setProfile(p);
@@ -52,24 +54,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  /* ── refreshProfile ───────────────────────────────────────── */
+  /* ── refreshProfile ────────────────────────────────────────────
+   * RÈGLE CLÉ : ne JAMAIS toucher loading / profileLoading ici.
+   * Modifier loading déclenche un re-render d'AppContent et de
+   * tous les useEffect qui en dépendent → boucle infinie assurée.
+   * ─────────────────────────────────────────────────────────── */
   const refreshProfile = useCallback(async (optimisticUpdates?: Partial<Profile>) => {
     if (!user) return;
-
     if (optimisticUpdates) {
-      // 1. Mise à jour locale immédiate → UI réactive à 0ms
+      // Mise à jour locale immédiate — 0 requête réseau bloquante
       if (mountedRef.current) {
         setProfile(prev => prev ? { ...prev, ...optimisticUpdates } : prev);
       }
-      // 2. Sync arrière-plan avec bypassCache=true pour lire la vraie valeur en base
-      //    Petit délai pour laisser Postgres propager l'écriture
+      // Sync silencieuse en arrière-plan après 400ms (laisse Postgres propager)
+      // On utilise une ref de l'id pour éviter la fermeture stale sur `user`
+      const uid = user.id;
       setTimeout(() => {
-        getProfile(user.id, true).then(fresh => {
+        getProfile(uid, true).then(fresh => {
           if (fresh && mountedRef.current) setProfile(fresh);
         }).catch(console.error);
       }, 400);
     } else {
-      // Refetch complet (login, déconnexion, etc.)
       await loadProfile(user);
     }
   }, [user, loadProfile]);
@@ -89,6 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, s: Session | null) => {
         if (!mountedRef.current) return;
+        // TOKEN_REFRESHED : pas besoin de recharger le profil
         if (event === 'TOKEN_REFRESHED') { resolve(); return; }
 
         setSession(s);
@@ -106,10 +112,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
 
+    // Filet de sécurité 1.5s : si Supabase ne répond pas
     const timeout = setTimeout(() => {
-      console.warn('Auth timeout (1.5s) — forçage loading=false');
+      console.warn('Auth timeout (1.5s) → loading=false forcé');
       resolve();
-    }, 1500); // 1.5s suffisant — Supabase répond en < 500ms dans 99% des cas
+    }, 1500);
 
     return () => {
       mountedRef.current = false;
@@ -119,10 +126,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [loadProfile]);
 
+  const isAdmin = profile?.role === 'admin';
+
   return (
     <AuthContext.Provider value={{
       user, profile, session, loading,
-      isAdmin: profile?.role === 'admin',
+      isAdmin,
       unauthorizedEmail: unauthorized,
       refreshProfile,
     }}>
