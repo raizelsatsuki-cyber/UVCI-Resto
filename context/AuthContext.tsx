@@ -67,10 +67,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(prev => prev ? { ...prev, ...optimisticUpdates } : prev);
       }
       // Sync silencieuse en arrière-plan après 400ms (laisse Postgres propager)
-      // On utilise une ref de l'id pour éviter la fermeture stale sur `user`
       const uid = user.id;
       setTimeout(() => {
-        getProfile(uid, true).then(fresh => {
+        // Vérifier que l'utilisateur est toujours connecté avant de mettre à jour
+        supabase.auth.getUser().then(({ data }) => {
+          if (!data.user || data.user.id !== uid) return; // déconnecté entre-temps
+          return getProfile(uid, true);
+        }).then(fresh => {
           if (fresh && mountedRef.current) setProfile(fresh);
         }).catch(console.error);
       }, 400);
@@ -113,9 +116,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     // Filet de sécurité 1.5s : si Supabase ne répond pas
+    // NE force PAS loading à false si un user est déjà en cours de chargement
+    // (évite le flash LoginPage pendant que getProfile() est en vol)
     const timeout = setTimeout(() => {
-      console.warn('Auth timeout (1.5s) → loading=false forcé');
-      resolve();
+      if (mountedRef.current && !resolved) {
+        console.warn('Auth timeout (1.5s) → loading=false forcé');
+        resolve();
+        // Si profile est encore null après 4s au total → on abandonne
+        setTimeout(() => {
+          if (mountedRef.current && !profile) {
+            console.warn('Profile timeout (4s) → profile forcé à null');
+          }
+        }, 2500);
+      }
     }, 1500);
 
     return () => {
