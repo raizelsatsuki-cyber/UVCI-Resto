@@ -3,10 +3,12 @@ import { supabase } from '../supabaseClient';
 const ALLOWED_DOMAIN  = '@uvci.edu.ci';
 function getRedirectUrl(): string {
   if (typeof window === 'undefined') return 'https://uvci-resto.vercel.app';
-  // FIX 2 : on redirige vers origin + '/#/' pour que le RouterProvider (hash-based)
-  // atterrisse sur la page d'accueil après callback OAuth au lieu de '/' sans hash
-  // qui pourrait déclencher un re-render avant que le hash soit restauré
-  return `${window.location.origin}/#/`;
+  // Supabase OAuth append les tokens dans le hash : origin/#access_token=...
+  // Ne pas mettre '/#/' ici — Supabase ignore les fragments dans redirectTo
+  // (les fragments ne sont pas transmis côté serveur dans les Location headers).
+  // Supabase va naturellement rediriger vers origin/ et injecter #access_token=...
+  // AuthContext.onAuthStateChange intercepte les tokens depuis le hash automatiquement.
+  return window.location.origin;
 }
 
 /** Connexion Google OAuth — étudiants */

@@ -27,7 +27,15 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [state, setState] = useState({ pathname: '/', search: '' });
 
   const parseHash = () => {
-    const raw  = window.location.hash.replace(/^#/, '') || '/';
+    const raw = window.location.hash.replace(/^#/, '') || '/';
+
+    // Supabase OAuth redirige vers origin/#access_token=...&token_type=bearer...
+    // Ce n'est PAS une route de notre app — on ignore et on retourne '/'
+    // AuthContext.onAuthStateChange intercepte les tokens automatiquement.
+    if (raw.startsWith('access_token=') || raw.startsWith('/access_token=')) {
+      return { pathname: '/', search: '' };
+    }
+
     const qIdx = raw.indexOf('?');
     if (qIdx === -1) return { pathname: raw, search: '' };
     return {

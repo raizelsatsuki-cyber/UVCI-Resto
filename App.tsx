@@ -194,6 +194,11 @@ function AppContent() {
     );
   }
 
+  // NE JAMAIS afficher LoginPage ici si l'URL contient un token OAuth
+  // (Supabase redirige vers origin/#access_token=... après Google OAuth —
+  // onAuthStateChange n'a pas encore eu le temps de résoudre la session)
+  const hasOAuthToken = window.location.hash.includes('access_token');
+
   if (unauthorizedEmail) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 text-center px-4">
@@ -214,6 +219,17 @@ function AppContent() {
   }
 
   if (!user) {
+    // Si un token OAuth est présent dans le hash → AuthContext est en train
+    // de le traiter. On affiche le spinner plutôt que LoginPage pour éviter
+    // le flash "page de connexion" après une connexion Google réussie.
+    if (hasOAuthToken) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-uvci-purple">
+          <Loader2 size={48} className="animate-spin mb-4" />
+          <p className="font-bold text-lg">Connexion en cours…</p>
+        </div>
+      );
+    }
     return (
       <>
         <LoginPage />
