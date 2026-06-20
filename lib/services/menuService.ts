@@ -78,7 +78,12 @@ export async function updateMenuItem(
   if (error) throw new Error(error.message);
 
   if (options !== undefined) {
-    await (supabase.from('meal_options').delete().eq('meal_id', id) as any);
+    // FIX : vérifier l'erreur du delete — si ça échoue, les nouvelles options
+    // seraient insérées en doublon avec les anciennes
+    const { error: delErr } = await (supabase
+      .from('meal_options').delete().eq('meal_id', id) as any);
+    if (delErr) throw new Error(delErr.message);
+
     if (options.length > 0) {
       const { error: optErr } = await (supabase
         .from('meal_options')

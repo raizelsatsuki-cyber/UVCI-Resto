@@ -28,15 +28,39 @@ export function invalidateProfileCache(userId: string): void {
   profileCache.delete(userId);
 }
 
+/**
+ * FIX : utilise une RPC atomique pour éviter la race condition
+ * (lecture puis écriture laissait une fenêtre où deux transactions
+ * simultanées pouvaient lire le même solde et l'écrire deux fois)
+ */
 export async function updateBalancePoints(userId: string, delta: number): Promise<number> {
-  const { data: profile } = await (supabase
-    .from('profiles').select('balance_points').eq('id', userId).single() as any);
-  const current    = (profile as any)?.balance_points ?? 0;
-  const newBalance = Math.max(0, current + delta);
-  const { error } = await (supabase
-    .from('profiles').update({ balance_points: newBalance }).eq('id', userId) as any);
+  // Pour un incrément (gain de points) : UPDATE avec expression atomique
+  if (delta >= 0) {
+    const { data, error } = await (supabase.rpc('increment_balance_points', {
+      p_user_id: userId,
+      p_delta:   delta,
+    }) as any);
+    if (error) {
+      // Fallback si la RPC n'existe pas encore
+      const { data: profile } = await (supabase
+        .from('profiles').select('balance_points').eq('id', userId).single() as any);
+      const current    = (profile as any)?.balance_points ?? 0;
+      const newBalance = current + delta;
+      await (supabase.from('profiles').update({ balance_points: newBalance }).eq('id', userId) as any);
+      return newBalance;
+    }
+    return (data as number) ?? 0;
+  }
+  // Pour un décrément : utiliser redeem_loyalty_points (déjà atomique)
+  const { data, error } = await (supabase.rpc('redeem_loyalty_points', {
+    p_user_id:    userId,
+    p_points:     Math.abs(delta),
+    p_description: 'Déduction automatique',
+  }) as any);
   if (error) throw new Error(error.message);
-  return newBalance;
+  const result = data as { success: boolean; new_balance: number; error?: string };
+  if (!result.success) throw new Error(result.error ?? 'Solde insuffisant');
+  return result.new_balance;
 }
 
 /**

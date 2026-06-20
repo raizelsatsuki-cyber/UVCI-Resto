@@ -117,9 +117,19 @@ export async function processOrder(
       return { status: 'failed' };
     }
 
-    await Promise.allSettled(
+    // FIX : Promise.allSettled laissait passer les erreurs silencieusement.
+    // On log les échecs de stock sans bloquer la commande (UX prioritaire)
+    // mais on les remonte dans la console pour monitoring.
+    const stockResults = await Promise.allSettled(
       cartItems.map((item) => decrementStock(item.menu_item.id, item.quantity))
     );
+    stockResults.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error(
+          `decrementStock échoué pour ${cartItems[i].menu_item.id}:`, r.reason
+        );
+      }
+    });
 
     return { status: 'success', orderId: (order as any).id };
   } catch (err) {

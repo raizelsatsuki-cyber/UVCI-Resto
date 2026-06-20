@@ -237,6 +237,10 @@ export interface Database {
         Args: { p_menu_item_id: string; p_quantity: number };
         Returns: void;
       };
+      increment_balance_points: {
+        Args: { p_user_id: string; p_delta: number };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
