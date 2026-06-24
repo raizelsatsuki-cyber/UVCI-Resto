@@ -15,7 +15,7 @@ type CheckoutState = 'idle' | 'processing' | 'cash_success' | 'wave_opening' | '
 export const CartSidebar: React.FC<CartSidebarProps> = ({ onClose }) => {
   const {
     cartItems, updateQuantity, removeFromCart,
-    totalAmount, cartCount, paymentMethod, setPaymentMethod, placeOrder,
+    totalAmount, cartCount, paymentMethod, setPaymentMethod, placeOrder, clearCart,
   } = useCart();
   const { user }  = useAuth();
   const router    = useRouter();
@@ -50,28 +50,23 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onClose }) => {
       return;
     }
 
-    // ── Wave (Bug 2 fix) ──────────────────────────────────────────────────────
-    // On navigue VERS /payment (polling Realtime actif) AVANT d'ouvrir Wave.
-    // L'utilisateur voit l'écran de vérification pendant qu'il paye dans Wave.
-    // Le panier est conservé ici — il sera vidé par /payment après confirmation.
+    // ── Wave (lien marchand statique) ────────────────────────────────────────
+    // Sans clé API Wave, on utilise le lien marchand avec montant pré-rempli.
+    // L'utilisateur paie dans l'app Wave, l'admin confirme manuellement.
     if (result.status === 'wave') {
       setState('wave_opening');
-      const { orderId, checkoutUrl } = result;
+      const { checkoutUrl } = result;
 
-      toast.info('Ouverture de Wave…', { autoClose: 2000 });
-
-      // 1. Fermer le sidebar
+      // Vider le panier immédiatement (la commande est créée)
+      clearCart();
       onClose();
 
-      // 2. Naviguer vers la page de vérification (Realtime démarre)
-      //    Bug 7 fix : on pointe vers /payment, pas /commande/succes
-      router.push(`/payment?orderId=${orderId}&waveUrl=${encodeURIComponent(checkoutUrl)}`);
+      toast.info('Redirection vers Wave…', { autoClose: 2000 });
 
-      // 3. Ouvrir Wave dans un nouvel onglet après un court délai
-      //    (laisser le temps au routeur de monter la page)
+      // Ouvrir Wave avec le montant pré-rempli
       setTimeout(() => {
-        window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
-      }, 400);
+        window.location.href = checkoutUrl;
+      }, 600);
       return;
     }
 
