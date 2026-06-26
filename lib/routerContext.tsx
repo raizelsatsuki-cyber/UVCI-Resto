@@ -1,23 +1,28 @@
-'use client';
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 interface RouterContextType {
+  pathname: string;
+  search:   string;
   push:     (path: string) => void;
-  pathname: string;   // chemin seul, sans query string
-  search:   string;   // query string complet (ex: "?order=abc")
 }
 
 const RouterContext = createContext<RouterContextType | undefined>(undefined);
 
 export const useRouter = () => {
   const ctx = useContext(RouterContext);
-  if (!ctx) return { push: (path: string) => { window.location.hash = path; } };
-  return { push: ctx.push };
+  // FIX : retourne ctx.push directement (fonction stable, pas un nouvel objet)
+  // L'ancien code retournait { push: ctx.push } → nouvel objet à chaque render
+  // → useEffect([..., router]) se déclenchait en boucle
+  if (!ctx) {
+    // Fallback hors RouterProvider
+    const fallbackPush = (path: string) => { window.location.hash = path; };
+    return { push: fallbackPush };
+  }
+  return ctx; // ctx est stable — même référence tant que RouterProvider ne re-rend pas
 };
 
 export const usePathname = () => useContext(RouterContext)?.pathname ?? '/';
 
-/** Retourne les query params de l'URL courante */
 export const useSearchParams = () => {
   const search = useContext(RouterContext)?.search ?? '';
   return new URLSearchParams(search.replace(/^\?/, ''));
@@ -29,9 +34,8 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const parseHash = () => {
     const raw = window.location.hash.replace(/^#/, '') || '/';
 
-    // Supabase OAuth redirige vers origin/#access_token=...&token_type=bearer...
-    // Ce n'est PAS une route de notre app — on ignore et on retourne '/'
-    // AuthContext.onAuthStateChange intercepte les tokens automatiquement.
+    // Supabase OAuth redirige vers origin/#access_token=...
+    // Ce n'est PAS une route — on ignore et retourne '/'
     if (raw.startsWith('access_token=') || raw.startsWith('/access_token=')) {
       return { pathname: '/', search: '' };
     }
@@ -39,8 +43,8 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const qIdx = raw.indexOf('?');
     if (qIdx === -1) return { pathname: raw, search: '' };
     return {
-      pathname: raw.slice(0, qIdx),          // ex: /commande/succes
-      search:   raw.slice(qIdx),             // ex: ?order=abc123
+      pathname: raw.slice(0, qIdx),
+      search:   raw.slice(qIdx),
     };
   };
 
@@ -51,14 +55,22 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const push = (path: string) => {
+  // FIX : useCallback pour que push soit stable entre les renders
+  // Sans ça, ctx change à chaque render → useRouter() retourne un nouveau ctx
+  // → tout useEffect([router]) se re-déclenche
+  const push = useCallback((path: string) => {
     window.location.hash = path;
-    // Scroll-to-top à chaque navigation — évite d'arriver à mi-page
     window.scrollTo({ top: 0, behavior: 'instant' });
-  };
+  }, []);
+
+  const ctx = React.useMemo(() => ({
+    pathname: state.pathname,
+    search:   state.search,
+    push,
+  }), [state.pathname, state.search, push]);
 
   return (
-    <RouterContext.Provider value={{ push, ...state }}>
+    <RouterContext.Provider value={ctx}>
       {children}
     </RouterContext.Provider>
   );

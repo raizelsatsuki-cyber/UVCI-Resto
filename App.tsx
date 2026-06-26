@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Loader2, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -123,18 +123,18 @@ function RouterView() {
 function AppContent() {
   const { user, profile, loading, isAdmin, unauthorizedEmail } = useAuth();
   const pathname = usePathname();
-  const router   = useRouter();
+  const router    = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => { routerRef.current = router; }, [router]);
 
-  // FIX 1 : rediriger automatiquement après connexion réussie
-  // Quand un user se connecte depuis /auth/login, App.tsx reçoit le nouvel user
-  // via AuthContext mais LoginPage ne navigue pas. On gère la redirection ici.
+  // Rediriger automatiquement après connexion réussie sur /auth/login
+  // router accédé via ref pour ne pas être dans les deps (évite la boucle)
   React.useEffect(() => {
     if (!user || loading || !profile) return;
     if (pathname === '/auth/login') {
-      // Rediriger selon le rôle une fois le profil chargé
-      router.push(isAdmin ? '/admin' : '/');
+      routerRef.current.push(isAdmin ? '/admin' : '/');
     }
-  }, [user, loading, profile, isAdmin, pathname, router]);
+  }, [user, loading, profile, isAdmin, pathname]);
 
   const PUBLIC_PATHS = ['/', '/menu', '/about', '/auth/login', '/commande/succes', '/commande/echec', '/payment/success', '/payment/failed'];
   const isPaymentPage = pathname === '/payment';
