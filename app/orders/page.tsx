@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useRouter } from '../../lib/routerContext';
 import { getUserOrders, subscribeToUserOrders, cancelOrder } from '../../lib/services/orderService';
 import { toast } from 'react-toastify';
+import { formatPrice } from '../../lib/formatPrice';
 
 const STATUS_MAP: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
   pending_payment: { label: 'En attente de paiement', icon: <Clock size={13} />,       className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
@@ -182,7 +183,7 @@ export default function ClientOrdersPage() {
                         {item.quantity}× {item.menu_items?.name ?? 'Plat'}
                       </span>
                       <span className="text-gray-500 font-mono">
-                        {((item.price_at_order ?? 0) * item.quantity).toLocaleString()} F
+                        {formatPrice(((item.price_at_order ?? 0) * item.quantity), true)}
                       </span>
                     </div>
                   ))}
@@ -195,7 +196,7 @@ export default function ClientOrdersPage() {
                   {order.payment_method}
                 </span>
                 <span className="font-extrabold text-uvci-purple">
-                  {order.total_price.toLocaleString()} FCFA
+                  {formatPrice(order.total_price)}
                 </span>
               </div>
 

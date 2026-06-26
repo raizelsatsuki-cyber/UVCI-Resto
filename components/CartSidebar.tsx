@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useCart } from '../context/CartContext';
+import { hapticSuccess, hapticError } from '../lib/haptic';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from '../lib/routerContext';
 import {
@@ -7,6 +8,7 @@ import {
   Banknote, Smartphone, Edit3, ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { formatPrice } from '../lib/formatPrice';
 
 interface CartSidebarProps { onClose: () => void; }
 
@@ -40,7 +42,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onClose }) => {
 
     // ── Cash ──────────────────────────────────────────────────────────────────
     if (result.status === 'success') {
-      setState('cash_success');
+      setState('cash_success'); hapticSuccess();
       toast.success('Commande envoyée ! Payez à la caisse.', {});
       setTimeout(() => {
         onClose();
@@ -72,14 +74,14 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onClose }) => {
 
     // ── Unauthorized ──────────────────────────────────────────────────────────
     if (result.status === 'unauthorized') {
-      setState('error');
+      setState('error'); hapticError();
       setErrorMsg('Session expirée. Veuillez vous reconnecter.');
       toast.error('Session expirée. Reconnectez-vous.');
       return;
     }
 
     // ── Failed ────────────────────────────────────────────────────────────────
-    setState('error');
+    setState('error'); hapticError();
     const msg = result.message ?? 'Une erreur est survenue. Réessayez.';
     setErrorMsg(msg);
     toast.error(msg);
@@ -177,7 +179,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onClose }) => {
                         </p>
                       )}
                       <p className="text-uvci-purple font-bold text-sm mt-0.5">
-                        {(unitPrice * item.quantity).toLocaleString()} F
+                        {formatPrice((unitPrice * item.quantity), true)}
                       </p>
                     </div>
                     <div className="flex flex-col items-center justify-between">
@@ -212,7 +214,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onClose }) => {
               {/* Total */}
               <div className="flex justify-between items-center font-extrabold text-lg">
                 <span className="text-gray-600">Total</span>
-                <span className="text-uvci-purple">{totalAmount.toLocaleString()} FCFA</span>
+                <span className="text-uvci-purple">{formatPrice(totalAmount)}</span>
               </div>
 
               {/* Méthode de paiement */}
@@ -273,8 +275,8 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ onClose }) => {
                 {state === 'processing'
                   ? <><Loader2 size={18} className="animate-spin" /> Traitement…</>
                   : paymentMethod === 'wave'
-                    ? <><Smartphone size={18} /> Payer via Wave — {totalAmount.toLocaleString()} FCFA</>
-                    : <><ArrowRight size={18} /> Commander — {totalAmount.toLocaleString()} FCFA</>
+                    ? <><Smartphone size={18} /> Payer via Wave — {formatPrice(totalAmount)}</>
+                    : <><ArrowRight size={18} /> Commander — {formatPrice(totalAmount)}</>
                 }
               </button>
             </div>

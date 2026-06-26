@@ -51,7 +51,11 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const push = (path: string) => { window.location.hash = path; };
+  const push = (path: string) => {
+    window.location.hash = path;
+    // Scroll-to-top à chaque navigation — évite d'arriver à mi-page
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
 
   return (
     <RouterContext.Provider value={{ push, ...state }}>

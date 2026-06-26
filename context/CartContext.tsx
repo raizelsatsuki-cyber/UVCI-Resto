@@ -27,8 +27,25 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cartItems, setCartItems]         = useState<CartItem[]>([]);
+  // Hydrater le panier depuis localStorage au montage
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('uvci-resto-cart');
+      return saved ? (JSON.parse(saved) as CartItem[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wave');
+
+  // Persister dans localStorage à chaque changement
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('uvci-resto-cart', JSON.stringify(cartItems));
+    } catch {
+      // localStorage indisponible (navigation privée, quota dépassé) → pas bloquant
+    }
+  }, [cartItems]);
 
   const addToCart = (item: MenuItem, options: SelectedOption[] = []) => {
     setCartItems(prev => {
@@ -55,7 +72,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
        .filter(i => i.quantity > 0),
     );
 
-  const clearCart = () => setCartItems([]);
+  const clearCart = () => {
+    setCartItems([]);
+    try { localStorage.removeItem('uvci-resto-cart'); } catch {}
+  };
 
   const totalAmount = useMemo(() =>
     cartItems.reduce((sum, item) => {

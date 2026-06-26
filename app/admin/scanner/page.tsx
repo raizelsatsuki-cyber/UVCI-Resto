@@ -8,6 +8,7 @@ import { Button3D } from '../../../components/ui/Button3D';
 import type { Order } from '../../../types/index';
 import { Camera, CheckCircle, XCircle, ArrowLeft, Loader2, ScanLine, QrCode } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { formatPrice } from '../../../lib/formatPrice';
 
 type ScanState = 'idle' | 'scanning' | 'found' | 'invalid' | 'confirming' | 'done';
 
@@ -166,9 +167,9 @@ export default function QRScannerPage() {
           </div>
           <div className="bg-gray-50 rounded-xl p-4 space-y-2">
             {order.order_items?.map((item, i) => (
-              <div key={i} className="flex justify-between text-sm"><span className="text-gray-700 font-medium">{item.quantity}× {item.menu_items?.name}</span><span className="text-gray-500">{((item.price_at_order ?? 0) * item.quantity).toLocaleString()} F</span></div>
+              <div key={i} className="flex justify-between text-sm"><span className="text-gray-700 font-medium">{item.quantity}× {item.menu_items?.name}</span><span className="text-gray-500">{formatPrice((item.price_at_order ?? 0) * item.quantity, true)}</span></div>
             ))}
-            <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-uvci-purple"><span>Total</span><span>{order.total_price.toLocaleString()} FCFA</span></div>
+            <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-uvci-purple"><span>Total</span><span>{formatPrice(order.total_price)}</span></div>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-500">Statut</span>

@@ -12,6 +12,7 @@ import {
   ShoppingBag, CheckCircle, XCircle, ChevronRight, Settings, Shield,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { formatPrice } from '../../lib/formatPrice';
 
 /* ── Statuts ─────────────────────────────────────────────────── */
 const STATUS_CFG: Record<string, { label: string; dot: string }> = {
@@ -266,7 +267,7 @@ export default function ProfilePage() {
           {[
             { label: 'Commandes',  value: totalOrders },
             { label: 'Complétées', value: completedOrders },
-            { label: 'Dépensé',    value: `${totalSpent.toLocaleString()} F` },
+            { label: 'Dépensé',    value: formatPrice(totalSpent, true) },
           ].map(s => (
             <div key={s.label} className="bg-white/15 rounded-2xl p-3 text-center">
               <p className="text-white font-black text-lg leading-none">{s.value}</p>
@@ -415,7 +416,7 @@ export default function ProfilePage() {
 
               <div className="flex items-center justify-between">
                 <span className="font-extrabold text-uvci-purple text-sm">
-                  {order.total_price.toLocaleString()} FCFA
+                  {formatPrice(order.total_price)}
                 </span>
                 <div className="flex items-center gap-2">
                   {CANCELLABLE.has(order.status) && (

@@ -1,6 +1,8 @@
 import React from 'react';
 import { MenuItem } from '../types/index';
 import { Plus } from 'lucide-react';
+import { formatPrice } from '../lib/formatPrice';
+import { hapticLight } from '../lib/haptic';
 import { Card3D } from './ui/Card3D';
 import { Button3D } from './ui/Button3D';
 
@@ -18,6 +20,13 @@ export const MenuItemsGrid: React.FC<MenuItemsGridProps> = ({ items, onAddToCart
             <img
               src={item.image_url ?? ''}
               alt={item.name}
+              loading="lazy"
+              onError={(e) => {
+                // Fallback: remplace par une image générique si l'URL est cassée
+                const target = e.currentTarget;
+                target.onerror = null; // évite la boucle infinie
+                target.src = `https://placehold.co/400x300/f3f4f6/9ca3af?text=${encodeURIComponent(item.category)}`;
+              }}
               className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 ${!item.is_available ? 'grayscale opacity-60' : ''}`}
             />
             <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm text-gray-800 text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-lg border-b-2 border-gray-200">
@@ -36,7 +45,7 @@ export const MenuItemsGrid: React.FC<MenuItemsGridProps> = ({ items, onAddToCart
             <div className="flex justify-between items-start mb-2">
               <h3 className="font-extrabold text-gray-900 text-base sm:text-lg leading-snug line-clamp-2">{item.name}</h3>
               <span className="font-black text-uvci-purple text-lg sm:text-xl whitespace-nowrap ml-2">
-                {item.price} <span className="text-xs font-medium text-gray-500">F</span>
+                {formatPrice(item.price, true)}
               </span>
             </div>
 
@@ -53,7 +62,7 @@ export const MenuItemsGrid: React.FC<MenuItemsGridProps> = ({ items, onAddToCart
             )}
 
             <Button3D
-              onClick={() => onAddToCart(item)}
+              onClick={() => { hapticLight(); onAddToCart(item); }}
               disabled={!item.is_available}
               variant="primary"
               fullWidth

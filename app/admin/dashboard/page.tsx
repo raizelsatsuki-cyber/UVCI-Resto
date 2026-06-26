@@ -11,6 +11,7 @@ import { getAllOrders, updateOrderStatus, subscribeToAllOrders, cancelOrder } fr
 import { getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem } from '../../../lib/services/menuService';
 import { supabase } from '../../../lib/supabaseClient';
 import { toast } from 'react-toastify';
+import { formatPrice } from '../../../lib/formatPrice';
 import {
   TrendingUp, Clock, CheckCircle, Package, ChefHat, Loader2, RefreshCw, XCircle,
   Hash, Utensils, Plus, Edit2, Trash2, ImageIcon, Save, X, ToggleLeft, ToggleRight,
@@ -270,7 +271,7 @@ export default function AdminDashboard() {
               <div className="bg-green-100 p-3 rounded-xl"><TrendingUp className="text-uvci-green" size={22} /></div>
               <span className="text-xs font-bold uppercase text-gray-400">Revenu (24h)</span>
             </div>
-            <p className="text-4xl font-black text-gray-800">{dailyRevenue.toLocaleString()} <span className="text-base text-gray-400">F</span></p>
+            <p className="text-4xl font-black text-gray-800">{formatPrice(dailyRevenue, true)}</p>
           </Card3D>
           <Card3D className="p-6 border-l-4 border-l-uvci-purple">
             <div className="flex items-center justify-between mb-3">
@@ -319,7 +320,7 @@ export default function AdminDashboard() {
                         <td className="p-4 font-mono text-xs text-gray-400"><Hash size={10} className="inline mr-0.5" />{order.id.slice(0, 6)}</td>
                         <td className="p-4 text-gray-500">{new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
                         <td className="p-4 font-bold text-gray-800">{order.client_phone}</td>
-                        <td className="p-4 font-bold">{order.total_price.toLocaleString()} F</td>
+                        <td className="p-4 font-bold">{formatPrice(order.total_price, true)}</td>
                         <td className="p-4">
                           <span className={`px-2 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[order.status] ?? 'bg-gray-100 text-gray-600'}`}>
                             {STATUS_LABELS[order.status] ?? order.status}
@@ -359,7 +360,7 @@ export default function AdminDashboard() {
                                 <div key={item.id ?? i} className="bg-white p-3 rounded-lg border border-gray-200 text-sm">
                                   <span className="font-bold">{item.quantity}× {item.menu_items?.name ?? 'Plat'}</span>
                                   {renderOptionNames(item.selected_option)}
-                                  <span className="float-right font-bold text-gray-500">{(item.price_at_order * item.quantity).toLocaleString()} F</span>
+                                  <span className="float-right font-bold text-gray-500">{formatPrice((item.price_at_order * item.quantity), true)}</span>
                                 </div>
                               ))}
                             </div>
@@ -409,7 +410,7 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td className="p-4"><span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium">{item.category}</span></td>
-                      <td className="p-4 font-bold text-uvci-purple">{item.price.toLocaleString()} F</td>
+                      <td className="p-4 font-bold text-uvci-purple">{formatPrice(item.price, true)}</td>
                       <td className="p-4 font-mono">{item.stock_quantity}</td>
                       <td className="p-4">
                         {item.is_available

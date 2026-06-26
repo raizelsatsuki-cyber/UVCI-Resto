@@ -11,6 +11,7 @@ import React from 'react';
 import { CartItem } from '../types/index';
 import { X, Minus, Plus, ShoppingBag, CreditCard } from 'lucide-react';
 import { Button3D } from './ui/Button3D';
+import { formatPrice } from '../lib/formatPrice';
 
 interface CartDrawerProps {
   cart: CartItem[];
@@ -115,7 +116,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           <div className="space-y-3 mb-6">
             <div className="flex justify-between text-gray-500 font-medium text-sm">
               <span>Sous-total</span>
-              <span>{total.toLocaleString()} FCFA</span>
+              <span>{formatPrice(total)}</span>
             </div>
             <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
               <span className="text-gray-600 font-semibold">Solde disponible</span>
@@ -126,7 +127,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <div className="flex justify-between items-end pt-2">
               <span className="text-lg font-bold text-gray-800">Total à payer</span>
               <span className="text-3xl font-black text-uvci-purple tracking-tight">
-                {total.toLocaleString()} <span className="text-sm text-gray-400">FCFA</span>
+                {formatPrice(total)}
               </span>
             </div>
           </div>
